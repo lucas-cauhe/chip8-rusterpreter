@@ -1,0 +1,55 @@
+
+
+---- MEMORY ----
+
+4KiB of addressable memory space
+
+0x000 - 0x1FF 
+Memory for the interpreter (registers, virtual hardware, display address space)
+
+
+0x200 - 0xFFF
+Memory for program data
+
+The Stack -> 16x2B, it only stores the address of the parent routine, (up to 16
+nested subroutine calls) -> Subroutine parameters are passed by register, not
+by the stack
+
+---- REGISTERS ----
+
+16 1B registers (Vx), general purpose
++ 1 2B register (I), store addresses (only the 12 LSB are used)
+-- Accessible but rather not use -- 
+VF is used as flag (of, z,)
+-- Inaccessible registers to Chip-8 programs --
+Since these can't be used by user programs, subroutine's parameters and jumps
+sort of stuff must be handled by the interpreter
+PC 2B register, same usage as I
+SP 1B register, only 5 LSB could be used, accesses must be aligned to 2B
+
+---- KEYBOARD ----
+???
+
+---- DISPLAY ----
+64x32 display (make size parameterized)
+The 4 MSB of a byte are used to display astherisks wherever there is a 1
+
+---- OBJECTIVE ---- 
+Take a Chip-8 program, load it in memory and execute it.
+Along its execution you can set debugging breakpoints.
+
+-- Program Loader --
+Given the name of a text file, parse it: place constants and string literals (if
+necessary) in their addresses (and keep the reference to those constants in the
+instruction that used them). Load every instruction in order into memory.
+Reset registers, flags, special registers, peripherals (everything)
+
+-- Execution --
+Handle timer interruptions ?? 
+Iterate over memory until you hit with EOP (End Of Program)
+
+-- Timers, sound and display --
+...
+
+HANDLE EXCEPTIONS
+Check instruction access is not out of bounds
