@@ -1,6 +1,6 @@
 
 
-mod operation_table;
+mod operations_set;
 mod timers;
 mod chip8;
 

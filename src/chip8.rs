@@ -1,35 +1,33 @@
-use std::io;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::fs;
+use std::sync::mpsc::Sender;
 
-use crate::operation_table::OperationTab;
-use crate::operation_table::Executable;
+use crate::operations_set::operations_table::{OperationTab, OperationSpecs};
+use crate::operations_set::operations_table::Executable;
 use crate::timers::TimerThread;
+
 
 const FIRST_REGISTER_ADDR: u16 = 0x010;
 const STACK_INIT_ADDR: u16 = 0x020; // 16-bit aligned
 const STACK_CANARY: u16 = 0x040; // if stack pointer tries to access a higher or equal address to this, raise exception
 const PROGRAM_INIT_ADDR: u16 = 0x200;
 
-pub struct OperationSpecs {
-    pub nibble: u8,
-    pub addr: u16,
-    pub constant: u8,
-    pub rx: u8,
-    pub ry: u8
-}
+// only for debugging purposes
+static mut d_timer_done: i32 = 0;
+static mut s_timer_done: i32 = 0;
+
 
 #[derive(Debug)]
 pub struct Chip8 {
     memory: Vec<u8>,
     registers: Vec<u16>, // list of memory mapped registers
     stack: Vec<u16>,
-    i_register: u16, // same as registers but for I
+    i_register: u16,
     pc: u16,
     sp: u8,
-    delay_timer: Option<Arc<Mutex<TimerThread>>>,
-    sound_timer: Option<Arc<Mutex<TimerThread>>>
+    delay_timer: Option<(Arc<Mutex<TimerThread>>, Sender<()>)>,
+    sound_timer: Option<(Arc<Mutex<TimerThread>>, Sender<()>)>,
 }
 
 impl Chip8 {
@@ -56,18 +54,62 @@ impl Chip8 {
             registers,
             stack,
             i_register: 0x000,
-            pc: 0x200,
+            pc: PROGRAM_INIT_ADDR,
             sp: 0x00, // access by STACK_INIT_ADDR + sp in memory
             delay_timer: None,
             sound_timer: None
         }
     }
 
+    pub fn set_register_value(&mut self, source: u8, value: u8) {
+        self.memory[self.registers[source as usize] as usize] = value;
+    }
+    pub fn get_register_value(&mut self, source: u8) -> u8 {
+        self.memory[self.registers[source as usize] as usize]
+    }
+    pub fn set_i_register_value(&mut self, value: u16) {
+        self.i_register = value;
+    }
+
+    pub fn update_pc(&mut self, increment: Option<u16>) {
+        self.pc = match increment {
+            Some(addr) => addr,
+            None => self.pc+0x0002
+        }
+    }
+
+    // If the timer is already set and counting, it will ovewrite its value
+    pub fn set_delay_timer(&mut self, val: u8) {
+        
+        if let Some((timer, ch)) = self.delay_timer.take() {
+            // kill thread
+            // there is the case when a thread has finished but the chip hasn't executed the next cycle so it won't have run the timer subroutine and the sender will send its message to nobody
+            // That would give the failed to send message error
+            // Therefore this condition is required
+            if Arc::strong_count(&timer) == 2 {
+                ch.send(()).expect("Failed to send message to delay timer thread");
+            }
+            
+            
+        }
+        self.delay_timer = Some(TimerThread::launch(val));
+    }
+
+    pub fn set_sound_timer(&mut self, val: u8) {
+        if let Some((timer, ch)) = self.sound_timer.take() {
+            // kill thread
+            if Arc::strong_count(&timer) == 2 {
+                ch.send(()).expect("Failed to send message to delay timer thread");
+            }
+        }
+        self.sound_timer = Some(TimerThread::launch(val));
+    }
+
     
     pub fn load_program(&mut self, file: &str ) -> Result<(), String> {
         // parse file
         // TODO: transform addresses from hex to base 10
-        // check there are no weird registers being used (from G-)
+        // (fixed, returns error) check there are no weird registers being used (from G-)
 
         let code = fs::read_to_string(file).expect("I/O Error");
         
@@ -94,7 +136,17 @@ impl Chip8 {
                 match clean_reg.as_str() {
                     "I" => {
                         let addr_mask = 0x0FFF & (inst[2].parse::<u16>().unwrap());
-                        Ok(0xA000 | addr_mask)
+                        // check it is not accessing out of bounds address
+                        if (0xFE00 & addr_mask) == 0 {
+                            Err(format!("Address out of bounds: {:#06x}", addr_mask))
+                        } else {
+                            Ok(0xA000 | addr_mask)
+                        }
+                    },
+                    "DT" => {
+                        let vx = inst[2].chars().nth(1).unwrap().to_digit(16).unwrap() as u16;
+                        let vx_mask = 0x0F00 & (vx << 8);
+                        Ok(0xF015 | vx_mask)
                     },
                     _ => { // it is a common register
                         match self.parse_common_registers(&clean_reg, inst[2]) {
@@ -144,7 +196,7 @@ impl Chip8 {
 
     }
 
-    pub fn execute_cycle(&mut self) {
+    pub fn execute_cycle(&mut self) -> Result<(), String> {
         // Fetch next opcode
 
         let next_opcode: u16 = ((self.memory[(self.pc as usize)] as u16) << 8) | self.memory[(self.pc as usize)+1] as u16;
@@ -158,7 +210,7 @@ impl Chip8 {
         let addr: u16 = 0x0FFF & next_opcode;
         let constant: u8 = (0x00FF & next_opcode) as u8;
         let rx: u8 = (0x0F & (next_opcode >> 8)) as u8;
-        let ry: u8 = (0x00F0 & next_opcode) as u8;
+        let ry: u8 = (0x0F & (next_opcode >> 4)) as u8;
 
         let opt_specs = OperationSpecs {
             nibble, addr, constant, rx, ry
@@ -167,36 +219,40 @@ impl Chip8 {
         // Execute
 
             // execute retrieved operation with chip parameters
-        operation.execute(opt_specs);
+        operation.execute(opt_specs, self)?;
 
         // Update timers
         // Perhaps handling these as interruptions would be better
 
         match self.delay_timer.take() {
-            Some(timer) => {
+            Some((timer, ch)) => {
                 let t_left = timer.lock().unwrap();
                 if t_left.timer == 0 {
                     // dispatch setter subroutine
+                    unsafe { d_timer_done = 1; }
                 } else {
                     drop(t_left);
-                    self.delay_timer = Some(timer)
+                    self.delay_timer = Some((timer, ch))
                 }
             },
             None => ()
         };
 
         match self.sound_timer.take() {
-            Some(timer) => {
+            Some((timer, ch)) => {
                 let t_left = timer.lock().unwrap();
                 if t_left.timer == 0 {
                     // dispatch setter subroutine
+                    unsafe { s_timer_done = 1; }
                 } else {
                     drop(t_left);
-                    self.sound_timer = Some(timer)
+                    self.sound_timer = Some((timer, ch))
                 }
             },
             None => ()
         };
+
+        Ok(())
         
     }
 
@@ -204,6 +260,10 @@ impl Chip8 {
 
 #[cfg(test)]
 mod tests {
+
+    use std::{thread, time::Duration, sync::Arc};
+
+    use crate::chip8::{FIRST_REGISTER_ADDR, PROGRAM_INIT_ADDR, d_timer_done, s_timer_done};
 
     use super::Chip8;
     #[test]
@@ -256,5 +316,35 @@ mod tests {
             0x81,
             0x13
         ], chip.memory[512..524])
+    }
+
+    // TIMERS TEST
+    #[test]
+    fn execute_program_1() {
+        let test_prog: Vec<u8> = vec![0xF3, 0x15, 0xF4, 0x18, 0x81, 0x11];
+        let mut chip = Chip8::new();
+        // set register values
+        chip.memory[(FIRST_REGISTER_ADDR as usize) + 3] = 0x02;
+        chip.memory[(FIRST_REGISTER_ADDR as usize) + 4] = 0x02;
+        for i in 0..test_prog.len() {
+            chip.memory[ (PROGRAM_INIT_ADDR as usize)+ i] = test_prog[i];
+        }
+        chip.execute_cycle().unwrap();
+        let d_t = chip.delay_timer.as_ref().unwrap();
+        let d_tlck = d_t.0.lock().unwrap();
+        assert_eq!(2, d_tlck.timer);
+        assert_eq!(2, Arc::strong_count(&d_t.0));
+        drop(d_tlck);
+        thread::sleep(Duration::new(1, 0));
+        chip.execute_cycle().unwrap();
+        thread::sleep(Duration::new(1, 0));
+        chip.execute_cycle().unwrap();
+        thread::sleep(Duration::new(1, 0));
+        unsafe {
+            assert_eq!(d_timer_done, 1, "Delay timer not finished yet");
+            assert_eq!(s_timer_done, 1, "Sound timer not finished yet");
+        }
+        
+        
     }
 }

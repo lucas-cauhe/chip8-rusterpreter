@@ -1,6 +1,6 @@
 mod chip8;
-mod operation_table;
 mod timers;
+mod operations_set;
 
 use chip8::Chip8;
 

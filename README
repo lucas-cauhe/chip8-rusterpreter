@@ -53,3 +53,5 @@ Iterate over memory until you hit with EOP (End Of Program)
 
 HANDLE EXCEPTIONS
 Check instruction access is not out of bounds
+
+design debugger for interpreter programs
