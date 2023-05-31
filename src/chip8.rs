@@ -4,7 +4,6 @@ use std::fs;
 use std::sync::mpsc::Sender;
 
 use crate::operations_set::operations_table::{OperationTab, OperationSpecs};
-use crate::operations_set::operations_table::Executable;
 use crate::timers::TimerThread;
 
 
@@ -12,10 +11,9 @@ const FIRST_REGISTER_ADDR: u16 = 0x010;
 const STACK_INIT_ADDR: u16 = 0x020; // 16-bit aligned
 const STACK_CANARY: u16 = 0x040; // if stack pointer tries to access a higher or equal address to this, raise exception
 const PROGRAM_INIT_ADDR: u16 = 0x200;
+pub const RTI_DEFAULT_ADDR: u16 = 0x600;
 
 // only for debugging purposes
-static mut d_timer_done: i32 = 0;
-static mut s_timer_done: i32 = 0;
 
 
 #[derive(Debug)]
@@ -79,7 +77,7 @@ impl Chip8 {
     }
 
     // If the timer is already set and counting, it will ovewrite its value
-    pub fn set_delay_timer(&mut self, val: u8) {
+    pub fn set_delay_timer(&mut self, val: u8, rti: Option<u16>) {
         
         if let Some((timer, ch)) = self.delay_timer.take() {
             // kill thread
@@ -92,17 +90,17 @@ impl Chip8 {
             
             
         }
-        self.delay_timer = Some(TimerThread::launch(val));
+        self.delay_timer = Some(TimerThread::launch(val, rti));
     }
 
-    pub fn set_sound_timer(&mut self, val: u8) {
+    pub fn set_sound_timer(&mut self, val: u8, rti: Option<u16>) {
         if let Some((timer, ch)) = self.sound_timer.take() {
             // kill thread
             if Arc::strong_count(&timer) == 2 {
                 ch.send(()).expect("Failed to send message to delay timer thread");
             }
         }
-        self.sound_timer = Some(TimerThread::launch(val));
+        self.sound_timer = Some(TimerThread::launch(val, rti));
     }
 
     
@@ -224,35 +222,59 @@ impl Chip8 {
         // Update timers
         // Perhaps handling these as interruptions would be better
 
-        match self.delay_timer.take() {
+        let delay_t_called = match self.delay_timer.take() {
             Some((timer, ch)) => {
                 let t_left = timer.lock().unwrap();
                 if t_left.timer == 0 {
                     // dispatch setter subroutine
-                    unsafe { d_timer_done = 1; }
+                    self.call_subroutine(t_left.rti)?;
+                    true
                 } else {
                     drop(t_left);
-                    self.delay_timer = Some((timer, ch))
+                    self.delay_timer = Some((timer, ch));
+                    false
                 }
             },
-            None => ()
+            None => false
         };
 
         match self.sound_timer.take() {
+            // the sound timer is set and delay timer hasn't called its subroutine
             Some((timer, ch)) => {
                 let t_left = timer.lock().unwrap();
-                if t_left.timer == 0 {
+                if t_left.timer == 0  && !delay_t_called {
                     // dispatch setter subroutine
-                    unsafe { s_timer_done = 1; }
+                    self.call_subroutine(t_left.rti)?;
                 } else {
                     drop(t_left);
                     self.sound_timer = Some((timer, ch))
                 }
             },
-            None => ()
+            _ => ()
         };
 
         Ok(())
+        
+    }
+
+    fn call_subroutine(&mut self, addr: u16) -> Result<(), String>{
+        // check stack overflow
+        let next_sp = STACK_INIT_ADDR + (self.sp as u16)*2;
+        if next_sp == STACK_CANARY {
+            Err("Reached stack canary: buffer overflow".to_string())
+        }
+        else {
+            // store pc where sp point to
+            self.memory[next_sp as usize] = ((self.pc >> 8) & 0x00FF) as u8;
+            self.memory[next_sp as usize+1] = (self.pc & 0x00FF) as u8;
+            // increment sp
+            self.sp += 1;
+
+            // modify pc to subroutine's address
+            self.pc = addr;
+
+            Ok(())
+        }
         
     }
 
@@ -263,7 +285,7 @@ mod tests {
 
     use std::{thread, time::Duration, sync::Arc};
 
-    use crate::chip8::{FIRST_REGISTER_ADDR, PROGRAM_INIT_ADDR, d_timer_done, s_timer_done};
+    use crate::chip8::{FIRST_REGISTER_ADDR, PROGRAM_INIT_ADDR, RTI_DEFAULT_ADDR, STACK_INIT_ADDR};
 
     use super::Chip8;
     #[test]
@@ -303,19 +325,23 @@ mod tests {
         let mut chip = Chip8::new();
         chip.load_program("tests/mock_program.txt").unwrap();
         assert_eq!([
-            0x81,
-            0x20,
-            0x8A,
-            0xE0,
-            0xA2,
-            0x04,
-            0x82,
-            0x31,
-            0x85,
-            0x82,
-            0x81,
-            0x13
+            0x81, 0x20,
+            0x8A, 0xE0, 
+            0xA2, 0x04,
+            0x82, 0x31,
+            0x85, 0x82,
+            0x81, 0x13
         ], chip.memory[512..524])
+    }
+
+    #[test]
+    fn call_subroutine_test() {
+        let mut chip = Chip8::new();
+        chip.call_subroutine(RTI_DEFAULT_ADDR).unwrap();
+        assert_eq!(chip.pc, RTI_DEFAULT_ADDR);
+        // test stack storage
+        assert_eq!(chip.memory[STACK_INIT_ADDR as usize..STACK_INIT_ADDR as usize+2], [0x02, 0x00]);
+        assert_eq!(chip.sp, 1);
     }
 
     // TIMERS TEST
@@ -329,22 +355,29 @@ mod tests {
         for i in 0..test_prog.len() {
             chip.memory[ (PROGRAM_INIT_ADDR as usize)+ i] = test_prog[i];
         }
+        chip.memory[RTI_DEFAULT_ADDR as usize] = 0x81;
+        chip.memory[RTI_DEFAULT_ADDR as usize+1] = 0x11;
+
         chip.execute_cycle().unwrap();
+
         let d_t = chip.delay_timer.as_ref().unwrap();
         let d_tlck = d_t.0.lock().unwrap();
         assert_eq!(2, d_tlck.timer);
         assert_eq!(2, Arc::strong_count(&d_t.0));
         drop(d_tlck);
         thread::sleep(Duration::new(1, 0));
+
         chip.execute_cycle().unwrap();
+
+        // delay timer's subroutine
+        assert_eq!(RTI_DEFAULT_ADDR, chip.pc);
         thread::sleep(Duration::new(1, 0));
+
         chip.execute_cycle().unwrap();
+
+        // sound timer's subroutine
+        assert_eq!(RTI_DEFAULT_ADDR, chip.pc);
         thread::sleep(Duration::new(1, 0));
-        unsafe {
-            assert_eq!(d_timer_done, 1, "Delay timer not finished yet");
-            assert_eq!(s_timer_done, 1, "Sound timer not finished yet");
-        }
-        
         
     }
 }

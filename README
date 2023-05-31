@@ -49,9 +49,34 @@ Handle timer interruptions ??
 Iterate over memory until you hit with EOP (End Of Program)
 
 -- Timers, sound and display --
-...
+For timers there will be a 'compiler directive' where to specify the address of the next block of code and whether
+it is a subroutine and for which timer
+Directives must start by !
+
+Specify address directive:
+!place_at=<addr>
+Code
+-- blank line to denote end of directive scope --
+
+Specify subroutine:
+!is_subroutine_for=[sound | delay]
+Code
+-- blank line to denote end of directive scope --
+
+If you use the latter without the former directive the default subroutine addr will be used
 
 HANDLE EXCEPTIONS
 Check instruction access is not out of bounds
 
 design debugger for interpreter programs
+
+---- SUBROUTINE CALL ----
+No caller context (register values) is saved
+1. store pc where sp point at
+2. increment sp
+3. modify pc to subroutine's address
+
+Return from subroutine
+1. Decrement sp
+2. Modify pc to what sp is pointing at
+

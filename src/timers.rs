@@ -1,7 +1,7 @@
 use std::{thread, sync::{Arc, Mutex, mpsc::{self, Sender, TryRecvError}}};
 use std::time::{Duration};
 
-
+use crate::chip8::RTI_DEFAULT_ADDR;
 
 #[derive(Debug)]
 pub struct TimerThread {
@@ -9,12 +9,18 @@ pub struct TimerThread {
     // whats the purpose of the timer
     // holds the direction a subroutine to handle the timer event
     // it can either be custom-made or by default it should send some kind of signal to a pause-like instruction
-    // pub setter: 
+    pub rti: u16
 }
 
 impl TimerThread {
-    pub fn launch(count: u8) -> (Arc<Mutex<Self>>, Sender<()>) {
-        let new_timer = Arc::new(Mutex::new(TimerThread { timer: count }));
+    pub fn launch(count: u8, rti: Option<u16>) -> (Arc<Mutex<Self>>, Sender<()>) {
+        let new_timer = Arc::new(Mutex::new(TimerThread { 
+            timer: count, 
+            rti: match rti {
+                Some(addr) => addr,
+                None => RTI_DEFAULT_ADDR
+            }
+        }));
         let new_timer_clone = Arc::clone(&new_timer);
         let (tx, rx) = mpsc::channel::<()>();
         thread::Builder::new().name("timer_thread".to_string()).spawn(move || {
@@ -46,7 +52,7 @@ mod tests {
     use super::TimerThread;
     #[test]
     fn timer_setup() {
-        let (timer, _s) = TimerThread::launch(10);
+        let (timer, _s) = TimerThread::launch(10, None);
         let mut times = [0; 5];
         for i in 0..5 {
             thread::sleep(Duration::new(0, 40_000_000));
@@ -60,7 +66,7 @@ mod tests {
 
     #[test]
     fn timer_kill() {
-        let (timer, s) = TimerThread::launch(10);
+        let (timer, s) = TimerThread::launch(10, None);
         s.send(()).unwrap();
         // let scheduler select the other thread
         thread::sleep(Duration::new(0,50_000_000));
