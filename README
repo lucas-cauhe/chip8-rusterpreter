@@ -21,18 +21,31 @@ by the stack
 + 1 2B register (I), store addresses (only the 12 LSB are used)
 -- Accessible but rather not use -- 
 VF is used as flag (of, z,)
+VF partitioning ->
+0bit -> collision
+7bit -> draw
 -- Inaccessible registers to Chip-8 programs --
 Since these can't be used by user programs, subroutine's parameters and jumps
 sort of stuff must be handled by the interpreter
 PC 2B register, same usage as I
 SP 1B register, only 5 LSB could be used, accesses must be aligned to 2B
 
+
 ---- KEYBOARD ----
 ???
 
 ---- DISPLAY ----
-64x32 display (make size parameterized)
+32x64 display (make size parameterized)
 The 4 MSB of a byte are used to display astherisks wherever there is a 1
+
+Display at coordinates (Vx, Vy) n 8-bit (n-byte) sprites stored at I onto the display
+The new pixels are XORred with the old pixels and if any happens to get cleaned, VF = collision (0x01)
+The display is cyclic.
+
+maybe create two new instructions
+DRWH where the nibble is applied horizontally
+DRVH where the nibble is interpreted as 0xVH where V and H are 4-bit values that will be rotated 4 bits to the right and applied vertically (ASR V 4)
+and horizontally (ASR H 4)
 
 ---- OBJECTIVE ---- 
 Take a Chip-8 program, load it in memory and execute it.
