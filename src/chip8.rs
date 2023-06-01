@@ -1,11 +1,10 @@
-use std::ops::Shl;
-use std::ops::ShlAssign;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::fs;
 use std::sync::mpsc::Sender;
 
-use crate::operations_set::operations_table::{OperationTab, OperationSpecs};
+use crate::operations_set::operations_table::Executable;
+use crate::operations_set::operations_table::{OperationTab, OperationSpecs, Ret, Cls};
 use crate::timers::TimerThread;
 
 
@@ -53,16 +52,6 @@ impl Chip8 {
             inter
         };
 
-        let gfx: Vec<Vec<u8>> = {
-            let mut inter: Vec<Vec<u8>> = Vec::new();
-            for i in 0..64 {
-                let mut pixel_row = Vec::with_capacity(8);
-                pixel_row.fill(0);
-                inter.push(pixel_row); // 64 / 8-bit values = 8
-            }
-            inter
-        };
-
         Chip8 {
             memory: Vec::from([0; 4096]),
             registers,
@@ -72,18 +61,25 @@ impl Chip8 {
             sp: 0x00, // access by STACK_INIT_ADDR + sp in memory
             delay_timer: None,
             sound_timer: None,
-            gfx
+            gfx: vec![vec![0_u8; 8]; 32]
         }
     }
 
     pub fn set_register_value(&mut self, source: u8, value: u8) {
         self.memory[self.registers[source as usize] as usize] = value;
     }
-    pub fn get_register_value(&mut self, source: u8) -> u8 {
+    pub fn get_register_value(&self, source: u8) -> u8 {
         self.memory[self.registers[source as usize] as usize]
     }
     pub fn set_i_register_value(&mut self, value: u16) {
         self.i_register = value;
+    }
+    pub fn leave_subroutine(&mut self) {
+        self.sp -= 1;
+        self.pc = (self.memory[self.stack[self.sp as usize] as usize] as u16) << 8 | self.memory[self.stack[self.sp as usize+1] as usize] as u16;
+    }
+    pub fn clear_display(&mut self) {
+        self.gfx = vec![vec![0_u8; 8]; 32];
     }
 
     pub fn update_pc(&mut self, increment: Option<u16>) {
@@ -133,7 +129,7 @@ impl Chip8 {
             // kill thread
             // there is the case when a thread has finished but the chip hasn't executed the next cycle so it won't have run the timer subroutine and the sender will send its message to nobody
             // That would give the failed to send message error
-            // Therefore this condition is required
+            // Hence this condition is required
             if Arc::strong_count(&timer) == 2 {
                 ch.send(()).expect("Failed to send message to delay timer thread");
             }
@@ -156,11 +152,11 @@ impl Chip8 {
     
     pub fn load_program(&mut self, file: &str ) -> Result<(), String> {
         // parse file
-        // TODO: transform addresses from hex to base 10
         // (fixed, returns error) check there are no weird registers being used (from G-)
 
-        let code = fs::read_to_string(file).expect("I/O Error");
-        
+        let mut code = fs::read_to_string(file).expect("I/O Error");
+        // only handles directives, not labels
+        //self.parse_directives( &mut code);
         
         let mut inst_buff: Vec<u8> = Vec::new();
         for line in code.lines() {
@@ -176,9 +172,15 @@ impl Chip8 {
         Ok(())
     }
 
+    /* fn parse_directives(&mut self, text: &mut String) {
+        loop {
+            let previous_code_to_directive = text.find("!").unwrap();
+        }
+    } */
+
     fn parse_instruction(&self, inst: &[&str]) -> Result<u16, String> {
         
-        let clean_reg = inst[1].replace(',', "");
+        let clean_reg = if inst.len() > 1 { inst[1].replace(',', "") } else { "".to_string() };
         match inst[0] {
             "LD" => {
                 match clean_reg.as_str() {
@@ -232,7 +234,9 @@ impl Chip8 {
                     Some((regx, regy)) => Ok(0xD000 | (regx << 8) | (regy << 4) | (0x000F & inst[3].parse::<u16>().unwrap())),
                     None => Err(format!("Error parsing instruction: {:?}", inst))
                 }
-            }
+            },
+            "RET" => Ok(0x00EE),
+            "CLS" => Ok(0x00E0),
             _ => Err("Undefined Instruction".to_string()) // undefined instruction
         }
 
@@ -247,7 +251,6 @@ impl Chip8 {
             ))
         }
         else { None }
-
     }
 
     pub fn execute_cycle(&mut self) -> Result<(), String> {
@@ -257,8 +260,12 @@ impl Chip8 {
 
         // Decode opcode
 
-            // retrieve certain operation
-        let operation = OperationTab::fetch_operation((0xF0 & (next_opcode >> 8)) as u8).unwrap();// trait implementor to execute operation
+        // special operations
+        let operation: Box<dyn Executable>  = match next_opcode {
+            0x00EE => Box::new(Ret { }),
+            0x00E0 => Box::new(Cls { }),
+            _ => OperationTab::fetch_operation((0xF0 & (next_opcode >> 8)) as u8).unwrap()
+        };
         
         let nibble: u8 = (0x000F & next_opcode) as u8; // operation code (if has one)
         let addr: u16 = 0x0FFF & next_opcode;
@@ -363,10 +370,13 @@ mod tests {
         fn parse_instruction_test() {
             let test_chip = Chip8::new();
             let mut test_instructions = [
-                ["AND", "V1,", "V3"], 
-                ["XOR", "VA,", "V8"],
-                ["OR", "V7,", "V6"],
-                ["OR", "VR,", "V6"]
+                vec!["AND", "V1,", "V3"], 
+                vec!["XOR", "VA,", "V8"],
+                vec!["OR", "V7,", "V6"],
+                vec!["OR", "VR,", "V6"],
+                vec!["DRW", "V1,", "V3,", "13"],
+                vec!["RET"],
+                vec!["CLS"]
             ].into_iter();
             let parsed_inst_1 = Chip8::parse_instruction(&test_chip, &test_instructions.next().unwrap());
             assert_eq!(Ok(0x8132), parsed_inst_1, "expected 0x8132, found: {:#06x}", parsed_inst_1.clone().unwrap());
@@ -376,6 +386,12 @@ mod tests {
             assert_eq!(Ok(0x8761), parsed_inst_3, "expected 0x8A83, found: {:#06x}", parsed_inst_3.clone().unwrap());
             let parsed_inst_4 = Chip8::parse_instruction(&test_chip, &test_instructions.next().unwrap());
             assert_eq!(matches!(parsed_inst_4, Err(_)), true);
+            let parsed_inst_5 = Chip8::parse_instruction(&test_chip, &test_instructions.next().unwrap());
+            assert_eq!(Ok(0xD13D), parsed_inst_5,"expected 0xD13D, found: {:#06x}", parsed_inst_5.clone().unwrap() );
+            let parsed_inst_6 = Chip8::parse_instruction(&test_chip, &test_instructions.next().unwrap());
+            assert_eq!(Ok(0x00EE), parsed_inst_6,"expected 0x00EE, found: {:#06x}", parsed_inst_6.clone().unwrap() );
+            let parsed_inst_7 = Chip8::parse_instruction(&test_chip, &test_instructions.next().unwrap());
+            assert_eq!(Ok(0x00E0), parsed_inst_7,"expected 0x00E0, found: {:#06x}", parsed_inst_7.clone().unwrap() );
         }
 
         #[test]
@@ -403,6 +419,10 @@ mod tests {
             // test stack storage
             assert_eq!(chip.memory[STACK_INIT_ADDR as usize..STACK_INIT_ADDR as usize+2], [0x02, 0x00]);
             assert_eq!(chip.sp, 1);
+            // return from subroutine
+            chip.leave_subroutine();
+            assert_eq!(chip.pc, 0x0200);
+            assert_eq!(chip.sp, 0);
         }
 
         #[test]

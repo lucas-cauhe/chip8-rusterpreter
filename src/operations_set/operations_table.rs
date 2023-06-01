@@ -27,3 +27,23 @@ pub trait Executable {
     // - Modify PC
     fn execute(&self, specs: OperationSpecs, chip: &mut Chip8) -> Result<(), String>;
 }
+
+// special instructions
+
+pub struct Ret { }
+pub struct Cls { }
+
+impl Executable for Ret {
+    fn execute(&self, specs: OperationSpecs, chip: &mut Chip8) -> Result<(), String> {
+        chip.leave_subroutine();
+        chip.update_pc(None);
+        Ok(())
+    }
+}
+impl Executable for Cls {
+    fn execute(&self, specs: OperationSpecs, chip: &mut Chip8) -> Result<(), String> {
+        chip.clear_display();
+        chip.update_pc(None);
+        Ok(())
+    }
+}

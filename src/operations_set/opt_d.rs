@@ -18,6 +18,7 @@ impl Executable for OptD {
         let mut flag_reg = chip.get_register_value(0x0F);
         flag_reg = flag_reg | 0x80;
         chip.set_register_value(0x0F, flag_reg);
+        chip.update_pc(None);
         Ok(())
     }
 }

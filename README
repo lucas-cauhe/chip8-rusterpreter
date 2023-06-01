@@ -58,7 +58,7 @@ instruction that used them). Load every instruction in order into memory.
 Reset registers, flags, special registers, peripherals (everything)
 
 -- Execution --
-Handle timer interruptions ?? 
+
 Iterate over memory until you hit with EOP (End Of Program)
 
 -- Timers, sound and display --
@@ -85,11 +85,12 @@ design debugger for interpreter programs
 
 ---- SUBROUTINE CALL ----
 No caller context (register values) is saved
-1. store pc where sp point at
-2. increment sp
-3. modify pc to subroutine's address
 
-Return from subroutine
-1. Decrement sp
-2. Modify pc to what sp is pointing at
 
+
+TODO
+What happens with display collisions
+Parser Directives
+2 new Display instructions
+Operations to be defined
+transform addresses from hex to base 10
