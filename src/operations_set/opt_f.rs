@@ -1,5 +1,5 @@
 use super::operations_table::*;
-use crate::Chip8;
+use crate::{Chip8, chip8::RoutinePurpose};
 pub struct OptF {}
 impl OptF {
     pub fn select_execution(&self, specs: OperationSpecs, chip: &mut Chip8) -> Option<()> {
@@ -14,13 +14,15 @@ impl OptF {
     // LD DT VX
     fn execute_x15(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let rx = chip.get_register_value(specs.rx);
-        chip.set_delay_timer(rx, None);
+        let delay_timer_addr = chip.get_routine_addr(RoutinePurpose::DelayTimer);
+        chip.set_delay_timer(rx, delay_timer_addr);
         chip.update_pc(None);
     }
     // LD ST VX
     fn execute_x18(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let rx = chip.get_register_value(specs.rx);
-        chip.set_sound_timer(rx, None);
+        let sound_timer_addr = chip.get_routine_addr(RoutinePurpose::SoundTimer);
+        chip.set_sound_timer(rx, sound_timer_addr);
         chip.update_pc(None);
     }
 }

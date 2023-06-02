@@ -17,7 +17,23 @@ const DISPLAY_HEIGHT: usize = 32;
 const DISPLAY_WIDTH: usize = 64;
 
 
-// only for debugging purposes
+pub enum ProgramType<'a> {
+    Main(&'a str),
+    Routine((&'a String, Option<u16>))
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RoutinePurpose {
+    DelayTimer,
+    SoundTimer,
+    Ordinary
+}
+
+#[derive(Debug)]
+pub struct RoutineParams {
+    addr: Option<u16>,
+    purpose: RoutinePurpose
+}
 
 
 #[derive(Debug)]
@@ -30,7 +46,8 @@ pub struct Chip8 {
     sp: u8,
     delay_timer: Option<(Arc<Mutex<TimerThread>>, Sender<()>)>,
     sound_timer: Option<(Arc<Mutex<TimerThread>>, Sender<()>)>,
-    gfx: Vec<Vec<u8>>
+    gfx: Vec<Vec<u8>>,
+    routines: Vec<RoutineParams>
 }
 
 impl Chip8 {
@@ -61,7 +78,8 @@ impl Chip8 {
             sp: 0x00, // access by STACK_INIT_ADDR + sp in memory
             delay_timer: None,
             sound_timer: None,
-            gfx: vec![vec![0_u8; 8]; 32]
+            gfx: vec![vec![0_u8; 8]; 32],
+            routines: Vec::new()
         }
     }
 
@@ -90,6 +108,10 @@ impl Chip8 {
     }
     pub fn load_i_address_value(&self, offset: usize) -> u8 {
         self.memory[self.i_register as usize + offset]
+    }
+    pub fn get_routine_addr(&self, purpose: RoutinePurpose) -> Option<u16> {
+        let matched_routine: Vec<&RoutineParams> = self.routines.iter().filter(|rout| rout.purpose == purpose).collect();
+        matched_routine[0].addr
     }
     pub fn get_gfx_sprite(&self, coords: (u8, u8), offset: usize) -> u64 {
         // take into acount the possible cyclic representation
@@ -133,8 +155,6 @@ impl Chip8 {
             if Arc::strong_count(&timer) == 2 {
                 ch.send(()).expect("Failed to send message to delay timer thread");
             }
-            
-            
         }
         self.delay_timer = Some(TimerThread::launch(val, rti));
     }
@@ -150,13 +170,25 @@ impl Chip8 {
     }
 
     
-    pub fn load_program(&mut self, file: &str ) -> Result<(), String> {
+    pub fn load_program(&mut self, kind: ProgramType ) -> Result<(), String> {
         // parse file
         // (fixed, returns error) check there are no weird registers being used (from G-)
-
-        let mut code = fs::read_to_string(file).expect("I/O Error");
-        // only handles directives, not labels
-        //self.parse_directives( &mut code);
+        let load_addr: u16;
+        let code = match kind {
+            ProgramType::Main(file) => {
+                let mut temp = fs::read_to_string(file).expect("I/O Error");
+                self.parse_directives(&mut temp)?;
+                load_addr = PROGRAM_INIT_ADDR;
+                temp
+            },
+            ProgramType::Routine((text, rt_addr)) => {
+                load_addr = match rt_addr {
+                    Some(addr) => addr,
+                    None => RTI_DEFAULT_ADDR
+                };
+                text.clone()
+            }
+        };
         
         let mut inst_buff: Vec<u8> = Vec::new();
         for line in code.lines() {
@@ -167,16 +199,61 @@ impl Chip8 {
         }
 
         for (i, inst) in inst_buff.into_iter().enumerate() {
-            self.memory[(PROGRAM_INIT_ADDR as usize)+i] = inst;
+            self.memory[(load_addr as usize)+i] = inst;
         }
         Ok(())
     }
 
-    /* fn parse_directives(&mut self, text: &mut String) {
-        loop {
-            let previous_code_to_directive = text.find("!").unwrap();
+    fn parse_directives(&mut self, text: &mut String) -> Result<(), String> {
+        while let Some(previous_code_to_directive) = text.find("!") { // find first directive in the code
+            let mut routine_params = RoutineParams {
+                addr: None,
+                purpose: RoutinePurpose::Ordinary
+            };
+            //let blank_lines: Vec<(usize, &str)> = text.lines().enumerate().filter(|tup: &(usize, &str)| tup.1=="" && tup.0 > previous_code_to_directive).collect();
+            let blank_lines = text.find("\n\n").unwrap();
+            let mut with_directives_code: String = text.drain(previous_code_to_directive..blank_lines).collect();
+            while let Some(dir) = with_directives_code.find("!") {
+                let until = with_directives_code.find("\n").unwrap();
+                let dir_line: String = with_directives_code.drain(dir..until).collect();
+                self.parse_specific_directive(&dir_line, &mut routine_params)?;
+                // remove trailing \n
+                with_directives_code.drain(0..1);
+            }
+            // Now with_directives_code has no directives
+            // load routine code as specified by routine_params
+            // For now, there are no checks on whether code is getting overwritten
+            self.load_program(ProgramType::Routine((&with_directives_code, routine_params.addr)))?;
+            self.routines.push(routine_params);
+            // remove trailing \n\n 
+            text.drain(0..2);
         }
-    } */
+        Ok(())
+    }
+
+    fn parse_specific_directive(&self, directive: &String, params: &mut RoutineParams) -> Result<(), String> {
+        let portioned_directive: Vec<&str> = directive.split("=").collect();
+        match portioned_directive[0] {
+            "!place_at" => {
+                params.addr = Some(portioned_directive[1].parse::<u16>().unwrap());
+                Ok(())
+            },
+            "!is_subroutine_for" => {
+                match portioned_directive[1] {
+                    "delay" => {
+                        params.purpose = RoutinePurpose::DelayTimer;
+                        Ok(())
+                    },
+                    "sound" => {
+                        params.purpose = RoutinePurpose::SoundTimer;
+                        Ok(())
+                    },
+                    _ => Err(format!("Specified routine purpose is incorrect: {:?}", portioned_directive[1]))
+                }
+            },
+            _ => Err(format!("Specified directived is not found: {:?}", portioned_directive[0]))
+        }
+    }
 
     fn parse_instruction(&self, inst: &[&str]) -> Result<u16, String> {
         
@@ -352,6 +429,8 @@ mod tests {
 
     use super::Chip8;
     mod parsing_tests {
+        use crate::chip8::{RoutineParams, RoutinePurpose};
+
         use super::*;
         #[test]
         fn parse_common_registers_test() {
@@ -395,9 +474,36 @@ mod tests {
         }
 
         #[test]
+        fn parse_specific_directive_test() {
+            let chip = Chip8::new();
+            let mut params = RoutineParams { addr: None, purpose: RoutinePurpose::Ordinary };
+            chip.parse_specific_directive(&"!place_at=2048".to_string(), &mut params).unwrap();
+            assert_eq!(Some(0x0800), params.addr, "Expected addr 0x0800, found  {:#06x}", params.addr.unwrap());
+            chip.parse_specific_directive(&"!is_subroutine_for=delay".to_string(), &mut params).unwrap();
+            assert_eq!(RoutinePurpose::DelayTimer, params.purpose);
+            chip.parse_specific_directive(&"!is_subroutine_for=sound".to_string(), &mut params).unwrap();
+            assert_eq!(RoutinePurpose::SoundTimer, params.purpose);
+            let err_res = chip.parse_specific_directive(&"!badaboo".to_string(), &mut params);
+            assert!(matches!(err_res, Err(_)));
+        }
+
+        #[test]
+        fn parse_directives_test() {
+            let mut chip = Chip8::new();
+            let mut test_text = "!is_subroutine_for=delay\n!place_at=2048\nLD V1, V2\nLD VA, VE\n\nLD I, 516".to_string();
+            chip.parse_directives(&mut test_text).unwrap();
+            assert_eq!("LD I, 516".to_string(), test_text, "Expected string LD I, 516, found {:?}", test_text);
+            assert_eq!(Some(0x0800), chip.get_routine_addr(RoutinePurpose::DelayTimer));
+            assert_eq!(chip.memory[0x0800..0x0804], [
+                0x81, 0x20,
+                0x8A, 0xE0,
+            ])
+        }
+
+        #[test]
         fn load_program_1(){
             let mut chip = Chip8::new();
-            chip.load_program("tests/mock_program.txt").unwrap();
+            chip.load_program(crate::chip8::ProgramType::Main("tests/mock_program.txt")).unwrap();
             assert_eq!([
                 0x81, 0x20,
                 0x8A, 0xE0, 
@@ -425,37 +531,45 @@ mod tests {
             assert_eq!(chip.sp, 0);
         }
 
-        #[test]
-        fn get_gfx_sprite_test() {
-            let mut chip = Chip8::new();
-            // set everything up
-            chip.gfx[0] = vec![0x13, 0x14, 0x15, 0x16, 0x00, 0x00, 0x00, 0x00];
-            chip.gfx[1] = vec![0x17, 0x18, 0x19, 0x20, 0x00, 0x00, 0x00, 0x00];
-            chip.gfx[2] = vec![0x21, 0x22, 0x23, 0x24, 0x00, 0x00, 0x00, 0x00];
-            // test
-            assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1300000000000000);
-            assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1700000000000000);
-            assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2100000000000000);
-        }
+        mod graphix {
+            use super::*;
 
-        #[test]
-        fn set_gfx_sprite_test() {
-            let mut chip = Chip8::new();
+            #[test]
+            fn get_gfx_sprite_test() {
+                let mut chip = Chip8::new();
+                // set everything up
+                chip.gfx[0] = vec![0x13, 0x14, 0x15, 0x16, 0x00, 0x00, 0x00, 0x00];
+                chip.gfx[1] = vec![0x17, 0x18, 0x19, 0x20, 0x00, 0x00, 0x00, 0x00];
+                chip.gfx[2] = vec![0x21, 0x22, 0x23, 0x24, 0x00, 0x00, 0x00, 0x00];
+                // test
+                assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1300000000000000);
+                assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1700000000000000);
+                assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2100000000000000);
+                // clear display
+                chip.clear_display();
+                assert_eq!(chip.gfx, vec![vec![0_u8; 8]; 32]);
+            }
 
-            chip.gfx[0] = vec![0x13, 0x14, 0x15, 0x16, 0x00, 0x00, 0x00, 0x00];
-            chip.gfx[1] = vec![0x17, 0x18, 0x19, 0x20, 0x00, 0x00, 0x00, 0x00];
-            chip.gfx[2] = vec![0x21, 0x22, 0x23, 0x24, 0x00, 0x00, 0x00, 0x00];
+            #[test]
+            fn set_gfx_sprite_test() {
+                let mut chip = Chip8::new();
 
-            assert_eq!(chip.get_gfx_sprite((0,4), 0), 0x0310000000000000);
+                chip.gfx[0] = vec![0x13, 0x14, 0x15, 0x16, 0x00, 0x00, 0x00, 0x00];
+                chip.gfx[1] = vec![0x17, 0x18, 0x19, 0x20, 0x00, 0x00, 0x00, 0x00];
+                chip.gfx[2] = vec![0x21, 0x22, 0x23, 0x24, 0x00, 0x00, 0x00, 0x00];
 
-            chip.set_gfx_sprite((0,0), 0, 0x03);
-            assert!(chip.memory[chip.registers[15] as usize] & 0x01 == 0x01); // check collision is activated
-            chip.set_gfx_sprite((0,0), 1, 0x05);
-            chip.set_gfx_sprite((0,0),2, 0x07);
+                assert_eq!(chip.get_gfx_sprite((0,4), 0), 0x0310000000000000);
 
-            assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1000000000000000); // 0x13 xor 0x03 = 0x10
-            assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1200000000000000); // 0x17 xor 0x05 = 0x12
-            assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2600000000000000); // 0x21 xor 0x07 = 0x26
+                chip.set_gfx_sprite((0,0), 0, 0x03);
+                assert!(chip.memory[chip.registers[15] as usize] & 0x01 == 0x01); // check collision is activated
+                chip.set_gfx_sprite((0,0), 1, 0x05);
+                chip.set_gfx_sprite((0,0),2, 0x07);
+
+                assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1000000000000000); // 0x13 xor 0x03 = 0x10
+                assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1200000000000000); // 0x17 xor 0x05 = 0x12
+                assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2600000000000000); // 0x21 xor 0x07 = 0x26
+            }
+
         }
 
         // TIMERS TEST
