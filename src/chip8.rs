@@ -513,9 +513,28 @@ mod tests {
                 0x81, 0x13
             ], chip.memory[512..524])
         }
+
+        // WITH DIRECTIVES
+        #[test]
+        fn load_program_2(){
+            let mut chip = Chip8::new();
+            chip.load_program(crate::chip8::ProgramType::Main("tests/mock_program_directives.txt")).unwrap();
+            assert_eq!([
+                0x85, 0x82,
+                0x81, 0x13
+            ], chip.memory[512..516]);
+            assert_eq!([
+                0x81, 0x20,
+                0x8A, 0xE0, 
+                0xA2, 0x04,
+                0x82, 0x31,
+            ], chip.memory[2048..2056]);
+        }
     }
 
     mod execution_tests {
+        use crate::chip8::RoutineParams;
+
         use super::*;
         #[test]
         fn call_subroutine_test() {
@@ -577,6 +596,15 @@ mod tests {
         fn execute_program_1() {
             let test_prog: Vec<u8> = vec![0xF3, 0x15, 0xF4, 0x18, 0x81, 0x11];
             let mut chip = Chip8::new();
+            // declare routines
+            chip.routines.push(RoutineParams{
+                addr: None,
+                purpose: crate::chip8::RoutinePurpose::DelayTimer
+            });
+            chip.routines.push(RoutineParams{
+                addr: None,
+                purpose: crate::chip8::RoutinePurpose::SoundTimer
+            });
             // set register values
             chip.memory[(FIRST_REGISTER_ADDR as usize) + 3] = 0x02;
             chip.memory[(FIRST_REGISTER_ADDR as usize) + 4] = 0x02;
