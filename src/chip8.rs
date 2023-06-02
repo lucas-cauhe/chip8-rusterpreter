@@ -1,3 +1,4 @@
+
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::fs;
@@ -15,14 +16,20 @@ const PROGRAM_INIT_ADDR: u16 = 0x200;
 pub const RTI_DEFAULT_ADDR: u16 = 0x600;
 const DISPLAY_HEIGHT: usize = 32;
 const DISPLAY_WIDTH: usize = 64;
+const EOP_OPT_CODE: u16 = 0x0000;
 
+#[derive(Debug)]
+pub struct EopError {
+    pub status: u8,
+
+}
 
 pub enum ProgramType<'a> {
     Main(&'a str),
     Routine((&'a String, Option<u16>))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum RoutinePurpose {
     DelayTimer,
     SoundTimer,
@@ -112,6 +119,9 @@ impl Chip8 {
     pub fn get_routine_addr(&self, purpose: RoutinePurpose) -> Option<u16> {
         let matched_routine: Vec<&RoutineParams> = self.routines.iter().filter(|rout| rout.purpose == purpose).collect();
         matched_routine[0].addr
+    }
+    pub fn get_gfx(&self) -> &[Vec<u8>] {
+        self.gfx.as_slice()
     }
     pub fn get_gfx_sprite(&self, coords: (u8, u8), offset: usize) -> u64 {
         // take into acount the possible cyclic representation
@@ -330,13 +340,15 @@ impl Chip8 {
         else { None }
     }
 
-    pub fn execute_cycle(&mut self) -> Result<(), String> {
+    pub fn execute_cycle(&mut self) -> Result<(), EopError> {
         // Fetch next opcode
 
         let next_opcode: u16 = ((self.memory[(self.pc as usize)] as u16) << 8) | self.memory[(self.pc as usize)+1] as u16;
 
         // Decode opcode
-
+        if next_opcode == EOP_OPT_CODE {
+            return Err(EopError {status: 0})
+        }
         // special operations
         let operation: Box<dyn Executable>  = match next_opcode {
             0x00EE => Box::new(Ret { }),
@@ -357,7 +369,7 @@ impl Chip8 {
         // Execute
 
             // execute retrieved operation with chip parameters
-        operation.execute(opt_specs, self)?;
+        operation.execute(opt_specs, self).expect("Error in operation execution: ");
 
         // Update timers
         // Perhaps handling these as interruptions would be better
@@ -367,7 +379,7 @@ impl Chip8 {
                 let t_left = timer.lock().unwrap();
                 if t_left.timer == 0 {
                     // dispatch setter subroutine
-                    self.call_subroutine(t_left.rti)?;
+                    self.call_subroutine(t_left.rti).expect("Error handling subroutine: ");
                     true
                 } else {
                     drop(t_left);
@@ -384,7 +396,7 @@ impl Chip8 {
                 let t_left = timer.lock().unwrap();
                 if t_left.timer == 0  && !delay_t_called {
                     // dispatch setter subroutine
-                    self.call_subroutine(t_left.rti)?;
+                    self.call_subroutine(t_left.rti).expect("Error handling subroutine");
                 } else {
                     drop(t_left);
                     self.sound_timer = Some((timer, ch))

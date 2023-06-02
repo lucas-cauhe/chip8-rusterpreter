@@ -3,16 +3,23 @@ use std::time::{Duration};
 
 use crate::chip8::RTI_DEFAULT_ADDR;
 
+///	Stores the time left for a launched timer and a pointer to the routine to handle the end of the countdown
 #[derive(Debug)]
 pub struct TimerThread {
     pub timer: u8,
-    // whats the purpose of the timer
     // holds the direction a subroutine to handle the timer event
     // it can either be custom-made or by default it should send some kind of signal to a pause-like instruction
     pub rti: u16
 }
 
 impl TimerThread {
+    ///	Launches a thread that acts like a timer device decrementing the count at 60Hz and instantiates itself
+    /// Returns a tuple containing the instance of itself and the sender end where to terminate the timer
+    ///
+    ///	# __Arguments__
+    ///
+    /// * `count` - _count to set the timer to_
+    /// * `rti` - _address where to handle the interruption_
     pub fn launch(count: u8, rti: Option<u16>) -> (Arc<Mutex<Self>>, Sender<()>) {
         let new_timer = Arc::new(Mutex::new(TimerThread { 
             timer: count, 

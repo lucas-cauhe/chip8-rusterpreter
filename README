@@ -89,7 +89,7 @@ No caller context (register values) is saved
 
 TODO
 What happens with display collisions
-Parser Directives
+Parser Directives ✅
 2 new Display instructions
 Operations to be defined
 transform addresses from hex to base 10
