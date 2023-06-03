@@ -3,6 +3,12 @@ use std::time::{Duration};
 
 use crate::chip8::RTI_DEFAULT_ADDR;
 
+pub enum Signals {
+    KILL, // kill thread
+    STP, // stop thread
+    RES // resume thread
+}
+
 ///	Stores the time left for a launched timer and a pointer to the routine to handle the end of the countdown
 #[derive(Debug)]
 pub struct TimerThread {
@@ -20,7 +26,7 @@ impl TimerThread {
     ///
     /// * `count` - _count to set the timer to_
     /// * `rti` - _address where to handle the interruption_
-    pub fn launch(count: u8, rti: Option<u16>) -> (Arc<Mutex<Self>>, Sender<()>) {
+    pub fn launch(count: u8, rti: Option<u16>) -> (Arc<Mutex<Self>>, Sender<Signals>) {
         let new_timer = Arc::new(Mutex::new(TimerThread { 
             timer: count, 
             rti: match rti {
@@ -29,13 +35,26 @@ impl TimerThread {
             }
         }));
         let new_timer_clone = Arc::clone(&new_timer);
-        let (tx, rx) = mpsc::channel::<()>();
+        let (tx, rx) = mpsc::channel::<Signals>();
         thread::Builder::new().name("timer_thread".to_string()).spawn(move || {
             loop { 
                 thread::sleep(Duration::new(0, 16_666_667));
                 match rx.try_recv() {
-                    Ok(()) | Err(TryRecvError::Disconnected) => {
-                        debug_assert!(false, "Kill message received or sender disconnected");
+                    Ok(sig) => {
+                        match sig {
+                            Signals::KILL => {
+                                debug_assert!(false, "Timer received kill signal");
+                                break;
+                            },
+                            Signals::STP => {
+                                // For now I'll assume once stopped it always receives the resume signal
+                                rx.recv().unwrap();
+                            },
+                            _ => { }
+                        }
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        debug_assert!(false, "Sender disconnected");
                         break
                     },
                     Err(TryRecvError::Empty) => {}
@@ -74,7 +93,7 @@ mod tests {
     #[test]
     fn timer_kill() {
         let (timer, s) = TimerThread::launch(10, None);
-        s.send(()).unwrap();
+        s.send(crate::timers::Signals::KILL).unwrap();
         // let scheduler select the other thread
         thread::sleep(Duration::new(0,50_000_000));
         assert_eq!(Arc::strong_count(&timer), 1, "There are more threads than expected: {}", Arc::strong_count(&timer));

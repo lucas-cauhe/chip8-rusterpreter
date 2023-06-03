@@ -6,6 +6,7 @@ use std::sync::mpsc::Sender;
 
 use crate::operations_set::operations_table::Executable;
 use crate::operations_set::operations_table::{OperationTab, OperationSpecs, Ret, Cls};
+use crate::timers::Signals;
 use crate::timers::TimerThread;
 
 
@@ -50,8 +51,8 @@ pub struct Chip8 {
     i_register: u16,
     pc: u16,
     sp: u8,
-    delay_timer: Option<(Arc<Mutex<TimerThread>>, Sender<()>)>,
-    sound_timer: Option<(Arc<Mutex<TimerThread>>, Sender<()>)>,
+    delay_timer: Option<(Arc<Mutex<TimerThread>>, Sender<Signals>)>,
+    sound_timer: Option<(Arc<Mutex<TimerThread>>, Sender<Signals>)>,
     gfx: Vec<Vec<u8>>,
     routines: Vec<RoutineParams>
 }
@@ -162,7 +163,7 @@ impl Chip8 {
             // That would give the failed to send message error
             // Hence this condition is required
             if Arc::strong_count(&timer) == 2 {
-                ch.send(()).expect("Failed to send message to delay timer thread");
+                ch.send(Signals::KILL).expect("Failed to send message to delay timer thread");
             }
         }
         self.delay_timer = Some(TimerThread::launch(val, rti));
@@ -172,7 +173,7 @@ impl Chip8 {
         if let Some((timer, ch)) = self.sound_timer.take() {
             // kill thread
             if Arc::strong_count(&timer) == 2 {
-                ch.send(()).expect("Failed to send message to delay timer thread");
+                ch.send(Signals::KILL).expect("Failed to send message to delay timer thread");
             }
         }
         self.sound_timer = Some(TimerThread::launch(val, rti));
