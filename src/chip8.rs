@@ -21,7 +21,6 @@ const EOP_OPT_CODE: u16 = 0x0000;
 #[derive(Debug)]
 pub struct EopError {
     pub status: u8,
-
 }
 
 pub enum ProgramType<'a> {
@@ -312,10 +311,18 @@ impl Chip8 {
                     None => Err(format!("Error parsing instruction: {:?}", inst))
                 }
             },
-            /* "ADD" => {
-                let (regx, regy) = self.parse_common_registers(&clean_reg, inst[2]);
-                0x8004 | (regx << 8) | (regy << 8)
-            }, */
+            "ADD" => {
+                match self.parse_common_registers(&clean_reg, inst[2]) {
+                    Some((regx, regy)) => Ok(0x8004 | (regx << 8) | (regy << 4)),
+                    None => Err(format!("Error parsing instruction: {:?}", inst))
+                }
+            },
+            "SUB" => {
+                match self.parse_common_registers(&clean_reg, inst[2]) {
+                    Some((regx, regy)) => Ok(0x8005 | (regx << 8) | (regy << 4)),
+                    None => Err(format!("Error parsing instruction: {:?}", inst))
+                }
+            },
             "DRW" => {
                 match self.parse_common_registers(&clean_reg, inst[2].replace(',', "").as_str()) {
                     Some((regx, regy)) => Ok(0xD000 | (regx << 8) | (regy << 4) | (0x000F & inst[3].parse::<u16>().unwrap())),

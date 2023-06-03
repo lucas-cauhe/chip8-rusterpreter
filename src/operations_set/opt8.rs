@@ -6,7 +6,10 @@ impl Opt8 {
         match specs.nibble {
             0 => Some(self.execute_0(specs, chip)),
             1 => Some(self.execute_1(specs, chip)),
-            // ...
+            2 => Some(self.execute_2(specs, chip)),
+            3 => Some(self.execute_3(specs, chip)),
+            4 => Some(self.execute_4(specs, chip)),
+            5 => Some(self.execute_5(specs, chip)),
             _ => None// invalid nibble
         }
     }
@@ -36,6 +39,30 @@ impl Opt8 {
         let rx_val = chip.get_register_value(specs.rx);
         chip.set_register_value(specs.rx, ry_val ^ rx_val);
         chip.update_pc(None);    
+    }
+    // ADD VX VY
+    fn execute_4(&self, specs: OperationSpecs, chip: &mut Chip8) { 
+        let ry_val = chip.get_register_value(specs.ry);
+        let rx_val = chip.get_register_value(specs.rx);
+        if (rx_val as u16) +  (ry_val as u16) > 255 {
+            chip.set_register_value(15, chip.get_register_value(15) | 0x02); // set overflow
+        } else {
+            chip.set_register_value(15, chip.get_register_value(15) & 0xFD); // unset overflow
+        }
+        chip.set_register_value(specs.rx, ry_val + rx_val);
+        chip.update_pc(None);
+    }
+    // SUB VX VY
+    fn execute_5(&self, specs: OperationSpecs, chip: &mut Chip8) { 
+        let ry_val = chip.get_register_value(specs.ry);
+        let rx_val = chip.get_register_value(specs.rx);
+        if rx_val > ry_val {
+            chip.set_register_value(15, chip.get_register_value(15) | 0x04); // set not borrow
+        } else {
+            chip.set_register_value(15, chip.get_register_value(15) & 0xFB); // unset not borrow
+        }
+        chip.set_register_value(specs.rx, rx_val - ry_val);
+        chip.update_pc(None);
     }
 }
 

@@ -3,9 +3,7 @@ mod timers;
 mod operations_set;
 
 use chip8::{Chip8, ProgramType};
-use core::str;
 use std::env;
-use std::io;
 
 /* fn update_screen(gfx: &[Vec<u8>]) {
     gfx.iter().map(|row| row.iter().map(|px8| {
@@ -39,6 +37,4 @@ fn main() {
             chip.set_register_value(15, vf & 0x7F);
         }
     }
-    
-
 }

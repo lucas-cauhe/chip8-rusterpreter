@@ -23,6 +23,7 @@ by the stack
 VF is used as flag (of, z,)
 VF partitioning ->
 0bit -> collision
+1bit -> last addition executed overflowed
 7bit -> draw
 -- Inaccessible registers to Chip-8 programs --
 Since these can't be used by user programs, subroutine's parameters and jumps
@@ -89,7 +90,7 @@ No caller context (register values) is saved
 
 TODO
 What happens with display collisions
-Parser Directives ✅
+Parse Directives ✅
 2 new Display instructions
 Operations to be defined
 transform addresses from hex to base 10
