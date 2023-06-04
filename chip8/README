@@ -94,3 +94,4 @@ Parse Directives ✅
 2 new Display instructions
 Operations to be defined
 transform addresses from hex to base 10
+Create labels as "mylabel": Code

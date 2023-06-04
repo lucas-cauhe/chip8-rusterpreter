@@ -2,7 +2,7 @@ mod chip8;
 mod timers;
 mod operations_set;
 
-use chip8::{Chip8, ProgramType};
+use crate::chip8::{Chip8, ProgramType};
 use std::env;
 
 /* fn update_screen(gfx: &[Vec<u8>]) {

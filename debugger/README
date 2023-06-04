@@ -1,0 +1,18 @@
+
+
+Debugger for chip8 language
+
+
+timer specific instructions to pause and resume them
+
+available commands (inspired by lldb syntax)
+
+b -l line -> to set breakpoint in specified line
+b -p label -> to set breakpoint in specified label
+
+r -> run program until next breakpoint, error or end of program
+
+n -> run next instruction
+
+stop [delay | sound] -> to stop the delay/sound timer if running
+resume [delay | sound] -> to resume the delay/sound timer if running

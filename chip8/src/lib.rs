@@ -1,8 +1,8 @@
 
 
-mod operations_set;
-mod timers;
-mod chip8;
+pub mod operations_set;
+pub mod timers;
+pub mod chip8;
 
 use chip8::Chip8;
 
