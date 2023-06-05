@@ -1,176 +1,93 @@
-use chip8::{self, chip8::{Chip8, ProgramType}};
+use chip8::{self, chip8::{Chip8, ProgramType}, timers::Signals};
 use crossterm::{
-    terminal::{enable_raw_mode, disable_raw_mode, }
+    self,
+    terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen}, event::{EnableMouseCapture, DisableMouseCapture}
 };
 use tui::{
-    backend::{CrosstermBackend},
-    Terminal,
-    layout::{Layout, Direction, Constraint, Alignment}, 
-    widgets::{Paragraph, Borders, BorderType, Block, List, ListItem}, 
-    style::{Color, Style, Modifier}, text::{Spans, Span}
+    backend::CrosstermBackend,
+    Terminal
 };
-use std::{io::{self, Stdout}, fs};
-use tui_textarea::TextArea;
+use std::io::{self, Stdout};
+use tui_textarea::{Input, Key};
 
-use crate::components::registers_component::RegistersComponent;
+use crate::components::{
+    registers::RegistersComponent, 
+    screen::ScreenComponent, 
+    text::TextComponent, 
+    command::CommandComponent, 
+    timers::{DelayTimerComponent, SoundTimerComponent}
+};
+use crate::scaffold::Scaffold;
+type DefaultTerminal = Terminal<CrosstermBackend<Stdout>>;
+
+
+
 
 pub struct Display {
-    term: Terminal<CrosstermBackend<Stdout>>,
-    chip_status: RegistersComponent
-    // text
-    // timer_miniscreen: Option<>
+    pub term: DefaultTerminal,
+    pub distribution: Option<Scaffold>, // gets constructed the first time the display is activated
+    pub chip_status: RegistersComponent,
+    pub screen: ScreenComponent,
+    pub text: TextComponent,
+    pub command: CommandComponent,
+    pub delay_timer: Option<DelayTimerComponent>,
+    pub sound_timer: Option<SoundTimerComponent>
 }
 impl Display {
 
-    pub fn setup() -> Self {
-        // enable_raw_mode().unwrap();
+    pub fn new(chip: &Chip8) -> Self {
         let stdout = io::stdout();
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).unwrap();
+        
         terminal.clear().unwrap();
-        Self { term: terminal, chip_status: RegistersComponent::new() }
+        Self { 
+            term: terminal, 
+            distribution: None, 
+            chip_status: RegistersComponent::new(
+                (0..16).into_iter().map(|ind| chip.get_register_value(ind) ).collect::<Vec<u8>>().as_slice()
+            ), 
+            screen: ScreenComponent::new(),
+            text: TextComponent::new("tests/mock_program.txt"),
+            command: CommandComponent::new(),
+            delay_timer: None,
+            sound_timer: None
+        }
     }
     pub fn render_display(&mut self) {
-        // hardcoded style for now
-        disable_raw_mode().unwrap();
-        loop {
-            self.term.draw(|rect| {
-                let size = rect.size();
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .margin(2)
-                    .constraints(
-                        [
-                            Constraint::Length(10),
-                            Constraint::Min(2),
-                            Constraint::Length(3),
-                        ]
-                        .as_ref(),
-                    )
-                    .split(size);
-                let command = Paragraph::new("Command")
-                    .style(Style::default().fg(Color::LightCyan))
-                    .alignment(Alignment::Center)
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .style(Style::default().fg(Color::White))
-                            .title("Command")
-                            .border_type(BorderType::Plain),
-                    );
-                let chip = chip8::chip8::Chip8::new();
-                let items: Vec<_> = (0..16).into_iter().map(|ind| ListItem::new(Spans::from(vec![Span::styled(
-                    ind.to_string() + ": " + &format!("{:#06x}", chip.get_register_value(ind)),
-                    Style::default(),
-                )]))).collect();
-                let registers = List::new(items)
-                    .style(Style::default().fg(Color::LightCyan))
-                    .highlight_style(
-                        Style::default()
-                            .bg(Color::Yellow)
-                            .fg(Color::Black)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .style(Style::default().fg(Color::White))
-                            .title("Regsiters")
-                            .border_type(BorderType::Plain),
-                    );
-                let text = fs::read_to_string("tests/mock_program.txt").unwrap();
-                let code = Paragraph::new(text)
-                    .style(Style::default().fg(Color::LightCyan))
-                    .alignment(Alignment::Left)
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .style(Style::default().fg(Color::White))
-                            .title("Code")
-                            .border_type(BorderType::Plain),
-                    );
-                let screen = Paragraph::new("Output")
-                    .style(Style::default().fg(Color::LightCyan))
-                    .alignment(Alignment::Left)
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .style(Style::default().fg(Color::White))
-                            .title("Output")
-                            .border_type(BorderType::Plain),
-                    );
-                let middle = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .margin(2)
-                    .constraints(
-                        [
-                            Constraint::Percentage(25),
-                            Constraint::Min(10)
-                        ].as_ref(),
-                    )
-                    .split(chunks[1]);
-                let sound_timer = Paragraph::new("Sound Timer")
-                    .style(Style::default().fg(Color::LightCyan))
-                    .alignment(Alignment::Left)
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .style(Style::default().fg(Color::White))
-                            .title("Sound Timer")
-                            .border_type(BorderType::Plain),
-                    );
-                let delay_timer = Paragraph::new("Delay Timer")
-                    .style(Style::default().fg(Color::LightCyan))
-                    .alignment(Alignment::Left)
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .style(Style::default().fg(Color::White))
-                            .title("Delay Timer")
-                            .border_type(BorderType::Plain),
-                    );
-                let timer_layout = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(
-                        [
-                            Constraint::Percentage(50),
-                            Constraint::Percentage(50)
-                        ].as_ref(),
-                    )
-                    .split(middle[1]);
-                let timer_layout2 = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(
-                        [
-                            Constraint::Percentage(50),
-                            Constraint::Percentage(50)
-                        ].as_ref(),
-                    )
-                    .split(timer_layout[1]);
-                let timer_layout3 = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints(
-                        [
-                            Constraint::Percentage(50),
-                            Constraint::Percentage(50)
-                        ].as_ref(),
-                    )
-                    .split(timer_layout2[1]);
-                rect.render_widget(registers, middle[0]);
-                rect.render_widget(code, middle[1]);
-                rect.render_widget(command, chunks[2]);
-                rect.render_widget(screen, chunks[0]);
-                rect.render_widget(sound_timer, timer_layout3[0]);
-                rect.render_widget(delay_timer, timer_layout3[1]);
-            }).unwrap();
-        }
+        self.term.draw(|rect| {
+            
+            let size = rect.size();
+            if let None = self.distribution {
+                self.distribution = Some(Scaffold::new(size));
+            }
+            
+            let dist = self.distribution.as_ref().unwrap();
+            rect.render_widget(self.chip_status.style.clone(), dist.registers);
+            rect.render_widget(self.text.style.clone(), dist.code);
+            rect.render_widget(self.command.style.widget(), dist.command);
+            rect.render_widget(self.screen.style.clone(), dist.output);
+            if let Some(timer) = self.sound_timer.as_ref() {
+                rect.render_widget(timer.style.clone(), dist.sound_timer);
+            }
+            if let Some(timer) = self.delay_timer.as_ref() {
+                rect.render_widget(timer.style.clone(), dist.delay_timer);
+            }
+        }).unwrap();
+    }
+
+    pub fn show_error(&mut self, msg: &str) {
+        self.term.draw(|rect| {
+            // display error lower widget with error message
+        }).unwrap();
     }
 }
 
 pub struct Debugger {
     chip: Chip8,
-    code_line: u32,
-    display: Display
+    display: Display,
+    next_breakpoint: Option<u32>,
+    current_line: u32
 }
 
 impl Debugger {
@@ -178,17 +95,74 @@ impl Debugger {
         let mut chip = Chip8::new();
         chip.load_program(ProgramType::Main(program)).unwrap();
         Self { 
+            display: Display::new(&chip),
             chip,
-            code_line: 0, 
-            display: Display::setup()
+            next_breakpoint: None,
+            current_line: 0
         }
     }
 
-    pub fn execute(&mut self, cmd: &String) {
+    pub fn receive_cmd(&self) -> Result<String, String> {
+        let cmd = self.display.command.rx.recv().expect("Error receiving command: ");
+        Ok(cmd)
+    }
+
+    pub fn execute(&mut self, cmd: &String) -> Result<(), String> {
         match cmd.as_str() {
-            "n" => print!("ok"),
-            _ => print!("ak")
+            "n" => {
+                // copy the working version of the loop action in chip8 main.rs
+                // tweak the screen variables
+                // if instruction set up a timer, create it in the display -> self.display.sound_timer = Some(SoundTimerComponent::new()),
+                // update current_line
+                todo!()
+            },
+            "r" => {
+                // change 100 default values for the number of lines in a program in both cases
+                while self.current_line != self.next_breakpoint.unwrap_or(100) && self.current_line != /* EOF */ 100 {
+                    if let Err(what) = self.execute(&"n".to_string()) {
+                        self.display.show_error(what.as_str());
+                        break;
+                    } 
+                }
+                Ok(())
+            },
+            other_cmd => {
+                let cmd_parts: Vec<&str> = other_cmd.split(' ').collect();
+                match cmd_parts[0] {
+                    "b" => {
+                        match cmd_parts[1] {
+                            "-l" => {
+                                self.next_breakpoint = Some(cmd_parts[2].parse().unwrap());
+                                Ok(())
+                            },
+                            "-p" => {
+                                if let Some(line) = self.display.text.find_definition(cmd_parts[2]){
+                                    self.next_breakpoint = Some(line);
+                                    Ok(())
+                                } else {
+                                    Err("name of definition not found".to_string())
+                                }
+                            },
+                            _ => Err("flag not found".to_string())
+                        }
+                    },
+                    "stop" => {
+                        self.chip.send_signal(Signals::STP, cmd_parts[1])?;
+                        Ok(())
+                    },
+                    "resume" => {
+                        self.chip.send_signal(Signals::RES, cmd_parts[1])?;
+                        Ok(())
+                    },
+                    _ => Err("Command not found".to_string())
+                }
+            }
+            
         }
+    }
+
+    pub fn update_screen(&mut self) {
+        self.display.render_display();
     }
 
 }

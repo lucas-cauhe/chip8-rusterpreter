@@ -113,6 +113,27 @@ impl Chip8 {
             None => self.pc+0x0002
         }
     }
+    pub fn send_signal(&self, sig: Signals, target: &str) -> Result<(), String>{
+        match target {
+            "sound" => {
+                if let Some((_, sx)) = &self.sound_timer {
+                    sx.send(sig).unwrap();
+                    Ok(())
+                } else {
+                    Err("Sound timer is not set".to_string())
+                }
+            },
+            "delay" => {
+                if let Some((_, sx)) = &self.delay_timer {
+                    sx.send(sig).unwrap();
+                    Ok(())
+                } else {
+                    Err("Sound timer is not set".to_string())
+                }
+            },
+            _ => Err(format!("specified timer doesn't exist: {:?}", target))
+        }
+    }
     pub fn load_i_address_value(&self, offset: usize) -> u8 {
         self.memory[self.i_register as usize + offset]
     }
