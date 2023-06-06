@@ -1,6 +1,7 @@
 mod debugger;
 mod components;
 mod scaffold;
+mod display;
 use chip8::chip8::Chip8;
 use debugger::{Debugger};
 use std::{env, io};
@@ -23,10 +24,14 @@ fn main () {
         // update display
         debugger.update_screen();
     }
-
 }
 
-/*
+/* 
+mod components;
+mod debugger;
+mod scaffold;
+
+
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -109,4 +114,4 @@ fn main() -> io::Result<()> {
 
     println!("Input: {:?}", textarea.lines()[0]);
     Ok(())
-}*/
+} */
