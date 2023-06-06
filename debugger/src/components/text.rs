@@ -3,10 +3,10 @@ use tui::{
     widgets::{Paragraph, Borders, BorderType, Block}, 
     style::{Color, Style}
 };
-use std::fs;
+use std::{fs, borrow::BorrowMut};
 pub struct TextComponent {
     pub style: Paragraph<'static>,
-    text: String
+    pub text: String
 }
 
 impl TextComponent {
@@ -30,7 +30,7 @@ impl TextComponent {
 
     pub fn find_definition(&self, def: &str) -> Option<u32> {
         // search for label with name = def
-        let matches: Vec<(_, _)> = self.text.lines().enumerate().filter(|(no, line)| line.find(def).is_some() ).collect();
+        let matches: Vec<(usize, &str)> = self.text.lines().enumerate().filter(|(_, line)| line.find(def).is_some() ).collect();
         if matches.len() > 0 {
             if matches.len() > 1 {
                 println!("Label specified is ambiguous, selected first match");

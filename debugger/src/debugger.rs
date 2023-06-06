@@ -7,8 +7,7 @@ use tui::{
     backend::CrosstermBackend,
     Terminal
 };
-use std::io::{self, Stdout};
-use tui_textarea::{Input, Key};
+use std::{io::{self, Stdout}, ops::Deref, marker::PhantomData, borrow::BorrowMut};
 
 use crate::components::{
     registers::RegistersComponent, 
@@ -94,6 +93,7 @@ impl Debugger {
     pub fn new(program: &str) -> Self {
         let mut chip = Chip8::new();
         chip.load_program(ProgramType::Main(program)).unwrap();
+        chip.set_register_value(2, 1);
         Self { 
             display: Display::new(&chip),
             chip,
@@ -107,18 +107,52 @@ impl Debugger {
         Ok(cmd)
     }
 
+    fn next_instruction_sets_timer(&self) -> Option<&str> {
+        if let Some(_) = self.display.text.text.lines().collect::<Vec<_>>()[self.current_line as usize].find("ST") {
+            Some("sound")
+        }
+        else if let Some(_) = self.display.text.text.lines().collect::<Vec<_>>()[self.current_line as usize].find("DT") {
+            Some("delay")
+        }
+        else {
+            None
+        }
+    }
+
     pub fn execute(&mut self, cmd: &String) -> Result<(), String> {
         match cmd.as_str() {
             "n" => {
                 // copy the working version of the loop action in chip8 main.rs
                 // tweak the screen variables
-                // if instruction set up a timer, create it in the display -> self.display.sound_timer = Some(SoundTimerComponent::new()),
+                if let Some(timer) = self.next_instruction_sets_timer() { 
+                    match timer {
+                        "delay" => self.display.delay_timer = Some(DelayTimerComponent::new()),
+                        "sound" => self.display.sound_timer = Some(SoundTimerComponent::new()),
+                        _ => { }
+                    }
+                }
+                if let Err(eop) = self.chip.execute_cycle() {
+                    println!("Program terminated with status: {:?}", eop.status);
+                }
+                
+                // check if you need to display gfx on screen
+                let vf = self.chip.get_register_value(15);
+                if vf & 0x80 == 0x80 {
+                    // update screen
+                    //update_screen(chip.get_gfx());
+        
+                    // put the draw flag down
+                    self.chip.set_register_value(15, vf & 0x7F);
+                }
                 // update current_line
-                todo!()
+                //  this is incorrect due to jumps
+                self.current_line += 1;
+                Ok(())
             },
             "r" => {
-                // change 100 default values for the number of lines in a program in both cases
-                while self.current_line != self.next_breakpoint.unwrap_or(100) && self.current_line != /* EOF */ 100 {
+                let last_line = self.display.text.text.lines().collect::<Vec<&str>>().len() as u32;
+                while self.current_line != self.next_breakpoint.unwrap_or(last_line+1) 
+                && self.current_line != last_line+1 {
                     if let Err(what) = self.execute(&"n".to_string()) {
                         self.display.show_error(what.as_str());
                         break;
@@ -162,8 +196,11 @@ impl Debugger {
     }
 
     pub fn update_screen(&mut self) {
+        self.display.chip_status.update_component(
+            (0..16).into_iter().map(|ind| self.chip.get_register_value(ind) ).collect::<Vec<u8>>().as_slice()
+        );
+        
         self.display.render_display();
     }
-
 }
 

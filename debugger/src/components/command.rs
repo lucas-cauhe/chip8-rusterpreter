@@ -33,14 +33,17 @@ impl CommandComponent {
             loop {
                 match crossterm::event::read().unwrap().into()  {
                     // hit Ctrl+C to exit
-                    Input { key: Key::Char('c'), ctrl: true, .. } => break,
+                    Input { key: Key::Char('c'), ctrl: true, .. } => {
+                        sx.send("exit".to_string()).expect("Error exiting");
+                        break;
+                    },
                     Input { key: Key::Char(ch), .. } => {
                         cmd.push(ch);
                     },
                     Input { key: Key::Enter, .. } => {
                         sx.send(cmd).expect("Error sending command");
                         cmd = "".to_string();
-                    }, 
+                    },
                     _ => { }
                 };
             }
@@ -50,5 +53,16 @@ impl CommandComponent {
             command: String::from(""),
             rx
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandComponent;
+
+    #[test]
+    fn cmd_component_reads_stdin() {
+        let cmd_comp = CommandComponent::new();
+        assert_eq!(cmd_comp.rx.recv().unwrap(), "b -l 1".to_string());
     }
 }
