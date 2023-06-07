@@ -11,14 +11,24 @@ impl OptF {
             _ => None// invalid nibble
         }
     }
-    // LD DT VX
+    
+    /// Fx15 - LD DT, Vx
+    ///
+    /// Set delay timer = Vx.
+    ///
+    /// DT is set equal to the value of Vx.
     fn execute_x15(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let rx = chip.get_register_value(specs.rx);
         let delay_timer_addr = chip.get_routine_addr(RoutinePurpose::DelayTimer);
         chip.set_delay_timer(rx, delay_timer_addr);
         chip.update_pc(None);
     }
-    // LD ST VX
+
+    /// Fx18 - LD ST, Vx
+    ///
+    /// Set sound timer = Vx.
+    ///
+    /// ST is set equal to the value of Vx.
     fn execute_x18(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let rx = chip.get_register_value(specs.rx);
         let sound_timer_addr = chip.get_routine_addr(RoutinePurpose::SoundTimer);

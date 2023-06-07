@@ -200,6 +200,9 @@ impl Chip8 {
         self.sound_timer = Some(TimerThread::launch(val, rti));
     }
 
+    pub fn address_out_of_bounds(address: u16) -> bool {
+        (0xFE00 & address) == 0
+    }
     
     pub fn load_program(&mut self, kind: ProgramType ) -> Result<(), String> {
         // parse file
@@ -295,7 +298,7 @@ impl Chip8 {
                     "I" => {
                         let addr_mask = 0x0FFF & (inst[2].parse::<u16>().unwrap());
                         // check it is not accessing out of bounds address
-                        if (0xFE00 & addr_mask) == 0 {
+                        if Chip8::address_out_of_bounds(addr_mask) {
                             Err(format!("Address out of bounds: {:#06x}", addr_mask))
                         } else {
                             Ok(0xA000 | addr_mask)
@@ -307,9 +310,19 @@ impl Chip8 {
                         Ok(0xF015 | vx_mask)
                     },
                     _ => { // it is a common register
-                        match self.parse_common_registers(&clean_reg, inst[2]) {
-                            Some((regx, regy)) => Ok(0x8000 | (regx << 8) | (regy << 4)),
-                            None => Err(format!("Error parsing instruction: {:?}", inst))
+                        // load from another register
+                        // Opt8_0
+                        if inst[2].chars().nth(0).unwrap() == 'V' {
+                            match self.parse_common_registers(&clean_reg, inst[2]) {
+                                Some((regx, regy)) => Ok(0x8000 | (regx << 8) | (regy << 4)),
+                                None => Err(format!("Error parsing instruction: {:?}", inst))
+                            }
+                        }
+                        // load constant value
+                        // Opt6
+                        else {
+                            let (rx, _) = self.parse_common_registers(&clean_reg, "r1").unwrap();
+                            Ok(0x6000 | (rx << 8) | (0x00FF & inst[2].parse::<u16>().unwrap()) )
                         }
                     }
                 }
@@ -334,10 +347,19 @@ impl Chip8 {
                 }
             },
             "ADD" => {
-                match self.parse_common_registers(&clean_reg, inst[2]) {
-                    Some((regx, regy)) => Ok(0x8004 | (regx << 8) | (regy << 4)),
-                    None => Err(format!("Error parsing instruction: {:?}", inst))
+                // Opt8_4
+                if inst[2].chars().nth(0).unwrap() == 'V' {
+                    match self.parse_common_registers(&clean_reg, inst[2]) {
+                        Some((regx, regy)) => Ok(0x8004 | (regx << 8) | (regy << 4)),
+                        None => Err(format!("Error parsing instruction: {:?}", inst))
+                    }
                 }
+                // Opt7 
+                else {
+                    let (rx, _) = self.parse_common_registers(&clean_reg, "r1").unwrap();
+                    Ok(0x7000 | (rx << 8) | (0x00FF & inst[2].parse::<u16>().unwrap()))
+                }
+                
             },
             "SUB" => {
                 match self.parse_common_registers(&clean_reg, inst[2]) {
@@ -351,6 +373,23 @@ impl Chip8 {
                     None => Err(format!("Error parsing instruction: {:?}", inst))
                 }
             },
+            "JP" => Ok(0x1000 | (0x0FFF & inst[1].parse::<u16>().unwrap())),
+            "CALL" => Ok(0x2000 | (0x0FFF & inst[1].parse::<u16>().unwrap())),
+            "SE" => {
+                let regs = self.parse_common_registers(&clean_reg, inst[2]).unwrap();
+                // is Opt5
+                if inst[2].chars().nth(0).unwrap() == 'V' {
+                    Ok(0x5000 | (regs.0 << 8) | (regs.1 << 4))
+                }
+                // is Opt3 
+                else {
+                    Ok(0x3000 | (regs.0 << 8) | (0x00FF & inst[2].parse::<u16>().unwrap()))
+                }
+            },
+            "SNE" => {
+                let (rx, _) = self.parse_common_registers(&clean_reg, "r2").unwrap();
+                Ok(0x4000 | (rx << 8) | (0x00FF & inst[2].parse::<u16>().unwrap()))
+            }
             "RET" => Ok(0x00EE),
             "CLS" => Ok(0x00E0),
             _ => Err("Undefined Instruction".to_string()) // undefined instruction
@@ -438,7 +477,7 @@ impl Chip8 {
         
     }
 
-    fn call_subroutine(&mut self, addr: u16) -> Result<(), String>{
+    pub fn call_subroutine(&mut self, addr: u16) -> Result<(), String>{
         // check stack overflow
         let next_sp = STACK_INIT_ADDR + (self.sp as u16)*2;
         if next_sp == STACK_CANARY {

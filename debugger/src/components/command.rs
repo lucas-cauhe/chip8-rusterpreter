@@ -1,4 +1,4 @@
-use std::{sync::mpsc::{Receiver, self}, thread};
+use std::{sync::{mpsc::{Receiver, self}, Arc, Mutex}, thread, rc::Rc};
 
 use tui::{
     layout::{Alignment}, 
@@ -18,8 +18,9 @@ pub struct CommandComponent {
 impl CommandComponent {
     pub fn new() -> Self {
         let mut command = TextArea::default();
+        
         command.set_cursor_line_style(Style::default());
-        //command.set_style(Style::default().fg(Color::LightCyan));
+        command.set_style(Style::default().fg(Color::LightCyan));
         command.set_alignment(Alignment::Left);
         command.set_block(Block::default()
                     .borders(Borders::ALL)

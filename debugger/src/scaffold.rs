@@ -7,6 +7,7 @@ pub struct Scaffold {
     pub sound_timer: Rect,
     pub delay_timer: Rect,
     pub command: Rect,
+    pub arrows: Rect
 }
 
 impl Scaffold {
@@ -18,7 +19,7 @@ impl Scaffold {
                 [
                     Constraint::Length(10),
                     Constraint::Min(2),
-                    Constraint::Length(3),
+                    Constraint::Length(5),
                 ]
                 .as_ref(),
             )
@@ -30,20 +31,21 @@ impl Scaffold {
             .constraints(
                 [
                     Constraint::Percentage(25),
+                    Constraint::Length(5),
                     Constraint::Min(10)
                 ].as_ref(),
             )
             .split(main_structure[1]);
-
-        let timers_layout = Scaffold::build_timers_layout(middle[1]);
-
+        let timers_layout = Scaffold::build_timers_layout(middle[2]);
+        
         Self { 
             output: main_structure[0], 
             registers: middle[0], 
-            code: middle[1], 
+            code: middle[2], 
             sound_timer: timers_layout[0], 
             delay_timer: timers_layout[1], 
-            command: main_structure[2]
+            command: main_structure[2],
+            arrows: middle[1]
         }
     }
 

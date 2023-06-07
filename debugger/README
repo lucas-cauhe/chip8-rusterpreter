@@ -20,5 +20,6 @@ resume [delay | sound] -> to resume the delay/sound timer if running
 
 TODO
 Place commands where they belong
-Select current line in text
+Select current line in text ✅
 Add special registers to debug
+Check timers are set ok

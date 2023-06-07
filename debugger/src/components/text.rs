@@ -3,7 +3,7 @@ use tui::{
     widgets::{Paragraph, Borders, BorderType, Block}, 
     style::{Color, Style}
 };
-use std::{fs, borrow::BorrowMut};
+use std::fs;
 pub struct TextComponent {
     pub style: Paragraph<'static>,
     pub text: String

@@ -1,9 +1,4 @@
 use chip8::{self, chip8::{Chip8, ProgramType}, timers::Signals};
-use tui::{
-    backend::CrosstermBackend,
-    Terminal
-};
-use std::io::Stdout;
 use crate::display::Display;
 use crate::components::
     timers::{DelayTimerComponent, SoundTimerComponent};
@@ -20,7 +15,7 @@ impl Debugger {
         chip.load_program(ProgramType::Main(program)).unwrap();
         chip.set_register_value(2, 1);
         Self { 
-            display: Display::new(&chip),
+            display: Display::new(),
             chip,
             next_breakpoint: None,
             current_line: 0
@@ -45,10 +40,13 @@ impl Debugger {
     }
 
     pub fn execute(&mut self, cmd: &String) -> Result<(), String> {
+        
+        
         match cmd.as_str() {
             "n" => {
                 // copy the working version of the loop action in chip8 main.rs
                 // tweak the screen variables
+                
                 if let Some(timer) = self.next_instruction_sets_timer() { 
                     match timer {
                         "delay" => self.display.delay_timer = Some(DelayTimerComponent::new()),
@@ -125,7 +123,7 @@ impl Debugger {
             (0..16).into_iter().map(|ind| self.chip.get_register_value(ind) ).collect::<Vec<u8>>().as_slice()
         );
         
-        self.display.render_display();
+        self.display.render_display(self.current_line as usize);
     }
 }
 
