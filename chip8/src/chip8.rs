@@ -24,11 +24,15 @@ pub struct EopError {
     pub status: u8,
 }
 
+/// Choose type of program to be loaded
 pub enum ProgramType<'a> {
+    /// name of file, uses default address 0x0200
     Main(&'a str),
+    /// code and address to load a sub routine
     Routine((&'a String, Option<u16>))
 }
 
+/// Purpose of the routine to be set
 #[derive(Debug, Eq, PartialEq)]
 pub enum RoutinePurpose {
     DelayTimer,
@@ -36,24 +40,34 @@ pub enum RoutinePurpose {
     Ordinary
 }
 
+/// Params to store for each custom routine
 #[derive(Debug)]
 pub struct RoutineParams {
     addr: Option<u16>,
     purpose: RoutinePurpose
 }
 
-
+/// Represents the chip8 emulator status
 #[derive(Debug)]
 pub struct Chip8 {
+    /// main memory of the chip of 4KiB
     memory: Vec<u8>,
-    registers: Vec<u16>, // list of memory mapped registers
+    /// list of memory mapped registers
+    registers: Vec<u16>, 
+    /// addresses of the memory mapped stack
     stack: Vec<u16>,
+    /// i register value
     i_register: u16,
+    /// program counter, next instruction is at pc+2
     pc: u16,
+    /// stack pointer, it indexes the `stack` field, next stack item is at sp+1
     sp: u8,
+    /// if set, it holds the timer itself and a mpsc channel to send signals
     delay_timer: Option<(Arc<Mutex<TimerThread>>, Sender<Signals>)>,
     sound_timer: Option<(Arc<Mutex<TimerThread>>, Sender<Signals>)>,
+    /// graphics
     gfx: Vec<Vec<u8>>,
+    /// list of user-defined routines
     routines: Vec<RoutineParams>
 }
 
@@ -90,29 +104,57 @@ impl Chip8 {
         }
     }
 
+    ///	Set `source` register to `value` 
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `source` - _register to be written_
+    /// * `value` - _value to be stored_
     pub fn set_register_value(&mut self, source: u8, value: u8) {
         self.memory[self.registers[source as usize] as usize] = value;
     }
+    ///	Retrieve `source` value
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `source` - _register to read_
     pub fn get_register_value(&self, source: u8) -> u8 {
         self.memory[self.registers[source as usize] as usize]
     }
+
     pub fn set_i_register_value(&mut self, value: u16) {
         self.i_register = value;
     }
+
+    ///	Handles the logic for leaving a subroutine
     pub fn leave_subroutine(&mut self) {
         self.sp -= 1;
         self.pc = (self.memory[self.stack[self.sp as usize] as usize] as u16) << 8 | self.memory[self.stack[self.sp as usize+1] as usize] as u16;
     }
+
+    /// Zeroes out the display
     pub fn clear_display(&mut self) {
         self.gfx = vec![vec![0_u8; 8]; 32];
     }
-
+    
+    ///	Modify pc's value, if `increment` is None, hop to next instruction (pc+2)
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `increment` - _Load address of subroutine_
     pub fn update_pc(&mut self, increment: Option<u16>) {
         self.pc = match increment {
             Some(addr) => addr,
             None => self.pc+0x0002
         }
     }
+
+    ///	Send `signal` to either sound or delay timer specified by `target`
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `sig` - _Signal to be sent_
+    /// * `target` - _Either "sound" or "display"_
     pub fn send_signal(&self, sig: Signals, target: &str) -> Result<(), String>{
         match target {
             "sound" => {
@@ -134,15 +176,29 @@ impl Chip8 {
             _ => Err(format!("specified timer doesn't exist: {:?}", target))
         }
     }
+
+    ///	Read memory value at address I-register + `offset`
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `offset` - _offset to add to I-register value_
     pub fn load_i_address_value(&self, offset: usize) -> u8 {
         self.memory[self.i_register as usize + offset]
     }
+
+    ///	Returns the address of the first user-defined routine found in `self.routines`
+    /// If multiple routines have been defined for a single timer, only the first one will be returned
+    /// Returns None if no matching routine was found
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `purpose` - _pattern to match the routine_
     pub fn get_routine_addr(&self, purpose: RoutinePurpose) -> Option<u16> {
         let matched_routine: Vec<&RoutineParams> = self.routines.iter().filter(|rout| rout.purpose == purpose).collect();
         // case there are multiple matches, only the first address is used
         if matched_routine.len() > 1 {
             matched_routine[0].addr
-        } 
+        }
         // there is no routine address set, hence default should be used
         else {
             None
@@ -151,6 +207,14 @@ impl Chip8 {
     pub fn get_gfx(&self) -> &[Vec<u8>] {
         self.gfx.as_slice()
     }
+
+    ///	Returns a sprite found in `self.gfx` from `coords` and `offset` specified
+    /// It takes care of cyclic representation of the sprite
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `coords` - _pixel-based coordinates_
+    /// * `offset` - _vertical offset_
     pub fn get_gfx_sprite(&self, coords: (u8, u8), offset: usize) -> u64 {
         // take into acount the possible cyclic representation
         let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
@@ -166,6 +230,13 @@ impl Chip8 {
         target_byte_mask & row_gfx_value
     }
 
+    ///	Sets a sprite to `sprite` at `coords` + vertical `offset`
+    ///
+    ///	# _Arguments_
+    ///
+    /// * `coords` - _pixel-based coordinates_
+    /// * `offset` - _vertical offset_
+    /// * `sprite` - _sprite to store_
     pub fn set_gfx_sprite(&mut self, coords: (u8, u8), offset: usize, sprite: u8) {
         let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
         let _target_col = coords.1 as usize % DISPLAY_WIDTH;

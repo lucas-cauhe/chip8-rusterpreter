@@ -3,6 +3,7 @@ use std::time::{Duration};
 
 use crate::chip8::RTI_DEFAULT_ADDR;
 
+/// Unix-like signals to be sent accross threads (specially for timers)
 pub enum Signals {
     KILL, // kill thread
     STP, // stop thread
