@@ -20,12 +20,13 @@ fn main () {
     
     loop {
         // wait for a command
-        // cambiar por un try_recv()
         next_cmd = debugger.receive_cmd().expect("Error receiving command");
         if next_cmd == "exit".to_string() {
             break;
         }
-        debugger.execute(&next_cmd).expect("Error executing: ");
+        if next_cmd != "".to_string() {
+            debugger.execute(&next_cmd).expect("Error executing: ");
+        }
         // update display
         debugger.update_screen();
     }

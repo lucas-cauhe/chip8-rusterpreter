@@ -1,3 +1,5 @@
+use std::sync::{Arc, mpsc::TryRecvError};
+
 use chip8::{self, chip8::{Chip8, ProgramType}, timers::Signals};
 use crate::display::Display;
 use crate::components::
@@ -13,9 +15,9 @@ impl Debugger {
     pub fn new(program: &str) -> Self {
         let mut chip = Chip8::new();
         chip.load_program(ProgramType::Main(program)).unwrap();
-        chip.set_register_value(2, 1);
+        chip.set_register_value(2, 5);
         Self { 
-            display: Display::new(),
+            display: Display::new(program),
             chip,
             next_breakpoint: None,
             current_line: 0
@@ -23,8 +25,11 @@ impl Debugger {
     }
 
     pub fn receive_cmd(&self) -> Result<String, String> {
-        let cmd = self.display.command.rx.recv().expect("Error receiving command: ");
-        Ok(cmd)
+        match self.display.command.rx.try_recv() {
+            Ok(cmd) => Ok(cmd),
+            Err(TryRecvError::Empty) => Ok("".to_string()),
+            _ => Err("disconnected".to_string())
+        }
     }
 
     fn next_instruction_sets_timer(&self) -> Option<&str> {
@@ -39,6 +44,11 @@ impl Debugger {
         }
     }
 
+    fn get_next_instruction_timer_value(&self) -> u32 {
+        let rx = self.display.text.text.lines().collect::<Vec<_>>()[self.current_line as usize].split(' ').nth(2).unwrap();
+        self.chip.get_register_value(rx.chars().nth(1).unwrap().to_digit(10).unwrap() as u8 ) as u32
+    }
+
     pub fn execute(&mut self, cmd: &String) -> Result<(), String> {
         
         
@@ -48,10 +58,13 @@ impl Debugger {
                 // tweak the screen variables
                 
                 if let Some(timer) = self.next_instruction_sets_timer() { 
+                    // get counter value
+                    let counter = self.get_next_instruction_timer_value();
                     match timer {
                         "delay" => self.display.delay_timer = Some(DelayTimerComponent::new()),
-                        "sound" => self.display.sound_timer = Some(SoundTimerComponent::new()),
+                        "sound" => self.display.sound_timer = Some(SoundTimerComponent::new(counter)),
                         _ => { }
+                        
                     }
                 }
                 if let Err(eop) = self.chip.execute_cycle() {
@@ -105,10 +118,12 @@ impl Debugger {
                     },
                     "stop" => {
                         self.chip.send_signal(Signals::STP, cmd_parts[1])?;
+                        // stop timer component
                         Ok(())
                     },
                     "resume" => {
                         self.chip.send_signal(Signals::RES, cmd_parts[1])?;
+                        // resume timer component
                         Ok(())
                     },
                     _ => Err("Command not found".to_string())
@@ -122,7 +137,12 @@ impl Debugger {
         self.display.chip_status.update_component(
             (0..16).into_iter().map(|ind| self.chip.get_register_value(ind) ).collect::<Vec<u8>>().as_slice()
         );
-        
+        // change for a match ?? 
+        if let Some(timer) = self.display.sound_timer.take() {
+            if *timer.time_left.lock().unwrap() != 0_u32 {
+                self.display.sound_timer = Some(timer);
+            }
+        }
         self.display.render_display(self.current_line as usize);
     }
 }

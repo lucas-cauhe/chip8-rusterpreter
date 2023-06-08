@@ -139,7 +139,14 @@ impl Chip8 {
     }
     pub fn get_routine_addr(&self, purpose: RoutinePurpose) -> Option<u16> {
         let matched_routine: Vec<&RoutineParams> = self.routines.iter().filter(|rout| rout.purpose == purpose).collect();
-        matched_routine[0].addr
+        // case there are multiple matches, only the first address is used
+        if matched_routine.len() > 1 {
+            matched_routine[0].addr
+        } 
+        // there is no routine address set, hence default should be used
+        else {
+            None
+        }
     }
     pub fn get_gfx(&self) -> &[Vec<u8>] {
         self.gfx.as_slice()
@@ -309,6 +316,11 @@ impl Chip8 {
                         let vx_mask = 0x0F00 & (vx << 8);
                         Ok(0xF015 | vx_mask)
                     },
+                    "ST" => {
+                        let vx = inst[2].chars().nth(1).unwrap().to_digit(16).unwrap() as u16;
+                        let vx_mask = 0x0F00 & (vx << 8);
+                        Ok(0xF018 | vx_mask)
+                    },
                     _ => { // it is a common register
                         // load from another register
                         // Opt8_0
@@ -470,7 +482,7 @@ impl Chip8 {
                     self.sound_timer = Some((timer, ch))
                 }
             },
-            _ => ()
+            _ => { }
         };
 
         Ok(())

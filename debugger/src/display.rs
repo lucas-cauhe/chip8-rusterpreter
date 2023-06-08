@@ -2,7 +2,7 @@ use tui::{
     backend::CrosstermBackend,
     Terminal, widgets::{Paragraph, List, Block, Borders, BorderType, ListItem}, style::{Color, Style, Modifier}, text::{Spans, Span}
 };
-use std::io::{self, Stdout};
+use std::{io::{self, Stdout}, sync::{Mutex, Arc}};
 
 use crate::components::{
     registers::RegistersComponent, 
@@ -12,11 +12,11 @@ use crate::components::{
     timers::{DelayTimerComponent, SoundTimerComponent}
 };
 use crate::scaffold::Scaffold;
-type DefaultTerminal = Terminal<CrosstermBackend<Stdout>>;
+pub type DefaultTerminal = Terminal<CrosstermBackend<Stdout>>;
 
 
 pub struct Display {
-    pub term: DefaultTerminal,
+    pub term: Arc<Mutex<DefaultTerminal>>,
     pub distribution: Option<Scaffold>, // gets constructed the first time the display is activated
     pub chip_status: RegistersComponent,
     pub screen: ScreenComponent,
@@ -27,25 +27,26 @@ pub struct Display {
 }
 impl Display {
 
-    pub fn new() -> Self {
+    pub fn new(file: &str) -> Self {
         let stdout = io::stdout();
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).unwrap();
         
         terminal.clear().unwrap();
         Self { 
-            term: terminal, 
+            term: Arc::new(Mutex::new(terminal)), 
             distribution: None, 
             chip_status: RegistersComponent::new(), 
             screen: ScreenComponent::new(),
-            text: TextComponent::new("tests/mock_program.txt"),
+            text: TextComponent::new(file),
             command: CommandComponent::new(),
             delay_timer: None,
             sound_timer: None
         }
     }
     pub fn render_display(&mut self, current_line: usize) {
-        self.term.draw(|rect| {
+        let mut term_lck = self.term.lock().unwrap();
+        term_lck.draw(|rect| {
             
             let size = rect.size();
             if let None = self.distribution {
@@ -81,7 +82,7 @@ impl Display {
             rect.render_widget(self.command.style.widget(), dist.command);
             rect.render_widget(arrow_list, dist.arrows);
             if let Some(timer) = self.sound_timer.as_ref() {
-                rect.render_widget(timer.style.clone(), dist.sound_timer);
+                rect.render_widget(timer.style.lock().unwrap().widget(), dist.sound_timer);
             }
             if let Some(timer) = self.delay_timer.as_ref() {
                 rect.render_widget(timer.style.clone(), dist.delay_timer);
@@ -90,8 +91,11 @@ impl Display {
     }
 
     pub fn show_error(&mut self, msg: &str) {
-        self.term.draw(|rect| {
-            // display error lower widget with error message
-        }).unwrap();
+        self.text.style = Paragraph::from(self.text.style.clone())
+            .block(Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::Red))
+            .title("Code Error: ".to_string() + msg)
+            .border_type(BorderType::Plain),);
     }
 }

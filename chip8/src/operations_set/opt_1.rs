@@ -17,6 +17,5 @@ impl Executable for Opt1 {
             chip.update_pc(Some(specs.addr));
             Ok(())
         }
-        
     }
 }

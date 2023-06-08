@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tui::layout::{Layout, Direction, Constraint, Rect};
 
 pub struct Scaffold {
