@@ -20,15 +20,18 @@ fn main () {
     
     loop {
         // wait for a command
+       
         next_cmd = debugger.receive_cmd().expect("Error receiving command");
         if next_cmd == "exit".to_string() {
             break;
         }
+        
         if next_cmd != "".to_string() {
             debugger.execute(&next_cmd).expect("Error executing: ");
         }
         // update display
         debugger.update_screen();
+        
     }
     disable_raw_mode().unwrap();
     // crossterm::execute!(

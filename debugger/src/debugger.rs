@@ -15,7 +15,7 @@ impl Debugger {
     pub fn new(program: &str) -> Self {
         let mut chip = Chip8::new();
         chip.load_program(ProgramType::Main(program)).unwrap();
-        chip.set_register_value(2, 5);
+        chip.set_register_value(2, 255);
         Self { 
             display: Display::new(program),
             chip,
@@ -56,20 +56,20 @@ impl Debugger {
             "n" => {
                 // copy the working version of the loop action in chip8 main.rs
                 // tweak the screen variables
-                
+                if let Err(eop) = self.chip.execute_cycle() {
+                    return Err("Program terminated with status: ".to_string() + &eop.status.to_string())
+                }
                 if let Some(timer) = self.next_instruction_sets_timer() { 
                     // get counter value
                     let counter = self.get_next_instruction_timer_value();
                     match timer {
-                        "delay" => self.display.delay_timer = Some(DelayTimerComponent::new()),
+                        "delay" => self.display.delay_timer = Some(DelayTimerComponent::new(counter)),
                         "sound" => self.display.sound_timer = Some(SoundTimerComponent::new(counter)),
                         _ => { }
                         
                     }
                 }
-                if let Err(eop) = self.chip.execute_cycle() {
-                    println!("Program terminated with status: {:?}", eop.status);
-                }
+                
                 
                 // check if you need to display gfx on screen
                 let vf = self.chip.get_register_value(15);
@@ -83,6 +83,7 @@ impl Debugger {
                 // update current_line
                 //  this is incorrect due to jumps
                 self.current_line += 1;
+
                 Ok(())
             },
             "r" => {
@@ -117,13 +118,24 @@ impl Debugger {
                         }
                     },
                     "stop" => {
-                        self.chip.send_signal(Signals::STP, cmd_parts[1])?;
-                        // stop timer component
+                        // if you try to use the original timers, since their frequency is much higher, count will reach 0 before you type the command
+                        // hence errors will arise
+                        //self.chip.send_signal(Signals::STP, cmd_parts[1])?;
+                        if cmd_parts[1] == "sound" {
+                            self.display.sound_timer.as_ref().unwrap().tx.send(Signals::STP).expect("Error sending signal to simulation thread");
+                        } else {
+                            self.display.delay_timer.as_ref().unwrap().tx.send(Signals::STP).expect("Error sending signal to simulation thread");
+                        }
+                        
                         Ok(())
                     },
                     "resume" => {
-                        self.chip.send_signal(Signals::RES, cmd_parts[1])?;
-                        // resume timer component
+                        //self.chip.send_signal(Signals::RES, cmd_parts[1])?;
+                        if cmd_parts[1] == "sound" {
+                            self.display.sound_timer.as_ref().unwrap().tx.send(Signals::RES).expect("Error sending signal to simulation thread");
+                        } else {
+                            self.display.delay_timer.as_ref().unwrap().tx.send(Signals::RES).expect("Error sending signal to simulation thread");
+                        }
                         Ok(())
                     },
                     _ => Err("Command not found".to_string())
@@ -134,14 +146,14 @@ impl Debugger {
     }
 
     pub fn update_screen(&mut self) {
+
         self.display.chip_status.update_component(
             (0..16).into_iter().map(|ind| self.chip.get_register_value(ind) ).collect::<Vec<u8>>().as_slice()
         );
-        // change for a match ?? 
-        if let Some(timer) = self.display.sound_timer.take() {
-            if *timer.time_left.lock().unwrap() != 0_u32 {
-                self.display.sound_timer = Some(timer);
-            }
+
+        match self.display.sound_timer.take() {
+            Some(timer) if *timer.time_left.lock().unwrap() != 0_u32 => self.display.sound_timer = Some(timer),
+            _ => { }
         }
         self.display.render_display(self.current_line as usize);
     }

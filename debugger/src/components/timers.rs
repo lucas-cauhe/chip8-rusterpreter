@@ -1,5 +1,6 @@
-use std::{thread, sync::{Arc, Mutex}, time::Duration, borrow::BorrowMut};
+use std::{thread, sync::{Arc, Mutex, mpsc::{Sender, self}}, time::Duration, borrow::BorrowMut};
 
+use chip8::timers::Signals;
 use tui::{
     layout::{Alignment, Rect}, 
     widgets::{Paragraph, Borders, BorderType, Block}, 
@@ -15,29 +16,40 @@ use crate::display::DefaultTerminal;
 // THAT IS, TIMERS DISPLAYED ARE ONLY FOR ILUSTRATION PURPOSES AND SHOW THERE IS A TIMER ON DURING SIMULATION
 
 pub struct DelayTimerComponent {
-    pub style: Paragraph<'static>
+    pub style: Arc<Mutex<TextArea<'static>>>,
+    pub time_left: Arc<Mutex<u32>>,
+    pub tx: Sender<Signals>
 }
 impl DelayTimerComponent {
-    pub fn new() -> Self {
-        let delay_timer = Paragraph::new("Delay Timer")
-            .style(Style::default().fg(Color::LightCyan))
-            .alignment(Alignment::Left)
-            .block(
+    pub fn new(count: u32) -> Self {
+        let mut delay_timer = TextArea::new(["Delay Timer is on".to_string(), "Real time can't be display as of now".to_string(), "".to_string()].to_vec());
+        delay_timer.set_style(Style::default().fg(Color::Green));
+        delay_timer.set_alignment(Alignment::Left);
+        delay_timer.set_block(
                 Block::default()
                     .borders(Borders::ALL)
                     .style(Style::default().fg(Color::White))
-                    .title("Delay Timer")
+                    .title("delay Timer Simulation")
                     .border_type(BorderType::Plain),
             );
+        let timer = Arc::new(Mutex::new(count));
+        let thread_timer = Arc::clone(&timer);
+        let arc_st = Arc::new(Mutex::new(delay_timer));
+        let arc_st_clone = Arc::clone(&arc_st);
+        // launch thread to update this timer component
+        let tx = launch_timer_thread(thread_timer, arc_st_clone);
         Self { 
-            style: delay_timer
+            style: arc_st,
+            time_left: timer,
+            tx
         }
     }
 }
 
 pub struct SoundTimerComponent {
     pub style: Arc<Mutex<TextArea<'static>>>,
-    pub time_left: Arc<Mutex<u32>>
+    pub time_left: Arc<Mutex<u32>>,
+    pub tx: Sender<Signals>
 }
 impl SoundTimerComponent {
     pub fn new(count: u32) -> Self {
@@ -56,27 +68,44 @@ impl SoundTimerComponent {
         let arc_st = Arc::new(Mutex::new(sound_timer));
         let arc_st_clone = Arc::clone(&arc_st);
         // launch thread to update this timer component
-        thread::spawn( move || {
-            loop {
-                // simulate timer
-                // decrement timer with freq 1Hz
-                let mut t_lck = thread_timer.lock().unwrap();
-                *t_lck -= 1;
-                if *t_lck <= 0 {
-                    break;
-                }
-                drop(t_lck);
-                let mut lck = arc_st_clone.lock();
-                let st_lck = lck.as_deref_mut().unwrap();
-                st_lck.delete_line_by_head(); 
-                st_lck.insert_str(thread_timer.lock().unwrap().to_string());
-                drop(lck);
-                thread::sleep(Duration::new(1, 0));
-            }
-        });
+        let tx = launch_timer_thread(thread_timer, arc_st_clone);
         Self { 
             style: arc_st,
-            time_left: timer
+            time_left: timer,
+            tx
         }
     }
+}
+
+fn launch_timer_thread(thread_timer: Arc<Mutex<u32>>, arc_st: Arc<Mutex<TextArea<'static>>>) -> Sender<Signals> {
+    let (tx, rx) = mpsc::channel::<Signals>();
+    thread::spawn( move || {
+        loop {
+            // simulate timer
+            // decrement timer with freq 1Hz
+            match rx.try_recv() {
+                Ok(sig) => {
+                    match sig {
+                        Signals::KILL => break,
+                        Signals::RES => { },
+                        Signals::STP => {rx.recv().unwrap();}
+                    }
+                },
+                _ => { }
+            }
+            let mut t_lck = thread_timer.lock().unwrap();
+            *t_lck -= 1;
+            if *t_lck <= 0 {
+                break;
+            }
+            drop(t_lck);
+            let mut lck = arc_st.lock();
+            let st_lck = lck.as_deref_mut().unwrap();
+            st_lck.delete_line_by_head(); 
+            st_lck.insert_str(thread_timer.lock().unwrap().to_string());
+            drop(lck);
+            thread::sleep(Duration::new(1, 0));
+        }
+    });
+    tx
 }

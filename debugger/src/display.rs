@@ -1,3 +1,4 @@
+use crossterm::style::Stylize;
 use tui::{
     backend::CrosstermBackend,
     Terminal, widgets::{Paragraph, List, Block, Borders, BorderType, ListItem}, style::{Color, Style, Modifier}, text::{Spans, Span}
@@ -44,7 +45,7 @@ impl Display {
             sound_timer: None
         }
     }
-    pub fn render_display(&mut self, current_line: usize) {
+    pub fn render_display(&mut self, mut current_line: usize) {
         let mut term_lck = self.term.lock().unwrap();
         term_lck.draw(|rect| {
             
@@ -56,11 +57,18 @@ impl Display {
                 "",
                 Style::default(),
             )]))).collect();
+            if current_line < self.text.text.lines().collect::<Vec<&str>>().len() {
+                arrows[current_line] = ListItem::new(Spans::from(vec![Span::styled(
+                    "->",
+                    Style::default(),
+                )]));
+            } else {
+                arrows[self.text.text.lines().collect::<Vec<&str>>().len()-1] = ListItem::new(Spans::from(vec![Span::styled(
+                    "",
+                    Style::default(),
+                )]));
+            }
             
-            arrows[current_line] = ListItem::new(Spans::from(vec![Span::styled(
-                "->",
-                Style::default(),
-            )]));
             let arrow_list = List::new(arrows)
             .style(Style::default().fg(Color::LightCyan))
             .highlight_style(
@@ -85,7 +93,7 @@ impl Display {
                 rect.render_widget(timer.style.lock().unwrap().widget(), dist.sound_timer);
             }
             if let Some(timer) = self.delay_timer.as_ref() {
-                rect.render_widget(timer.style.clone(), dist.delay_timer);
+                rect.render_widget(timer.style.lock().unwrap().widget(), dist.delay_timer);
             }
         }).unwrap();
     }
