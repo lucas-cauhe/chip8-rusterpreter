@@ -10,37 +10,70 @@ impl Opt8 {
             3 => Some(self.execute_3(specs, chip)),
             4 => Some(self.execute_4(specs, chip)),
             5 => Some(self.execute_5(specs, chip)),
-            _ => None// invalid nibble
+            6 => Some(self.execute_6(specs, chip)),
+            7 => Some(self.execute_7(specs, chip)),
+            0x0E => Some(self.execute_e(specs, chip)),
+            _ => None // invalid nibble
         }
     }
-    // LD VX VY
+    /// 8xy0 - LD Vx, Vy
+    /// 
+    ///Set Vx = Vy.
+    ///
+    ///Stores the value of register Vy in register Vx.
     fn execute_0(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let ry_value = chip.get_register_value(specs.ry);
         chip.set_register_value(specs.rx, ry_value);
         chip.update_pc(None);
     }
-    // OR VX VY
+    /// 8xy1 - OR Vx, Vy
+    /// 
+    /// Set Vx = Vx OR Vy.
+    /// 
+    /// Performs a bitwise OR on the values of Vx and Vy, then stores the result in Vx. 
+    /// A bitwise OR compares the corrseponding bits from two values, and if either bit is 1, 
+    /// then the same bit in the result is also 1. Otherwise, it is 0.
     fn execute_1(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let ry_val = chip.get_register_value(specs.ry);
         let rx_val = chip.get_register_value(specs.rx);
         chip.set_register_value(specs.rx, ry_val | rx_val); 
         chip.update_pc(None);   
     }
-    // AND VX VY
+
+    /// 8xy2 - AND Vx, Vy
+    /// 
+    ///Set Vx = Vx AND Vy.
+    ///
+    ///Performs a bitwise AND on the values of Vx and Vy, then stores the result in Vx. 
+    ///A bitwise AND compares the corrseponding bits from two values, and if both bits are 1, 
+    ///then the same bit in the result is also 1. Otherwise, it is 0.
     fn execute_2(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let ry_val = chip.get_register_value(specs.ry);
         let rx_val = chip.get_register_value(specs.rx);
         chip.set_register_value(specs.rx, ry_val & rx_val);  
         chip.update_pc(None);  
     }
-    // XOR VX VY
+
+    /// 8xy3 - XOR Vx, Vy
+    /// 
+    /// Set Vx = Vx XOR Vy.
+    /// 
+    /// Performs a bitwise exclusive OR on the values of Vx and Vy, then stores the result in Vx. 
+    /// An exclusive OR compares the corrseponding bits from two values, and if the bits are not both the same, 
+    /// then the corresponding bit in the result is set to 1. Otherwise, it is 0.
     fn execute_3(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let ry_val = chip.get_register_value(specs.ry);
         let rx_val = chip.get_register_value(specs.rx);
         chip.set_register_value(specs.rx, ry_val ^ rx_val);
         chip.update_pc(None);    
     }
-    // ADD VX VY
+    
+    /// 8xy4 - ADD Vx, Vy
+    /// 
+    /// Set Vx = Vx + Vy, set VF = carry.
+    /// 
+    /// The values of Vx and Vy are added together. If the result is greater than 8 bits (i.e., > 255,) VF is set to 1, otherwise 0. 
+    /// Only the lowest 8 bits of the result are kept, and stored in Vx.
     fn execute_4(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let ry_val = chip.get_register_value(specs.ry);
         let rx_val = chip.get_register_value(specs.rx);
@@ -52,7 +85,12 @@ impl Opt8 {
         chip.set_register_value(specs.rx, ry_val + rx_val);
         chip.update_pc(None);
     }
-    // SUB VX VY
+
+    /// 8xy5 - SUB Vx, Vy
+    /// 
+    /// Set Vx = Vx - Vy, set VF = NOT borrow.
+    /// 
+    /// If Vx > Vy, then VF is set to 1, otherwise 0. Then Vy is subtracted from Vx, and the results stored in Vx.
     fn execute_5(&self, specs: OperationSpecs, chip: &mut Chip8) { 
         let ry_val = chip.get_register_value(specs.ry);
         let rx_val = chip.get_register_value(specs.rx);
@@ -64,6 +102,57 @@ impl Opt8 {
         chip.set_register_value(specs.rx, rx_val - ry_val);
         chip.update_pc(None);
     }
+
+    /// 8xy6 - SHR Vx {, Vy}
+    /// 
+    /// Set Vx = Vx SHR 1.
+    /// 
+    /// If the least-significant bit of Vx is 1, then VF is set to 1, otherwise 0. Then Vx is divided by 2.
+    fn execute_6(&self, specs: OperationSpecs, chip: &mut Chip8) { 
+        let ry_val = chip.get_register_value(specs.ry);
+        let rx_val = chip.get_register_value(specs.rx);
+        if 0x01 & rx_val == 0x01 {
+            chip.set_register_value(15, chip.get_register_value(15) | 0x08); // set LSB was 1
+        } else {
+            chip.set_register_value(15, chip.get_register_value(15) & 0xF7); // unset LSB was 1
+        }
+        chip.set_register_value(specs.rx, rx_val >> ry_val);
+        chip.update_pc(None);    
+    }
+
+    /// 8xy7 - SUBN Vx, Vy
+    /// 
+    /// Set Vx = Vy - Vx, set VF = NOT borrow.
+    /// 
+    /// If Vy > Vx, then VF is set to 1, otherwise 0. Then Vx is subtracted from Vy, and the results stored in Vx.
+    fn execute_7(&self, specs: OperationSpecs, chip: &mut Chip8) { 
+        let ry_val = chip.get_register_value(specs.ry);
+        let rx_val = chip.get_register_value(specs.rx);
+        if ry_val > rx_val {
+            chip.set_register_value(15, chip.get_register_value(15) | 0x04); // set not borrow
+        } else {
+            chip.set_register_value(15, chip.get_register_value(15) & 0xFB); // unset not borrow
+        }
+        chip.set_register_value(specs.rx, ry_val - rx_val);
+        chip.update_pc(None);
+    }
+
+    /// 8xyE - SHL Vx {, Vy}
+    /// 
+    /// Set Vx = Vx SHL 1.
+    /// 
+    /// If the most-significant bit of Vx is 1, then VF is set to 1, otherwise to 0. Then Vx is multiplied by 2.
+    fn execute_e(&self, specs: OperationSpecs, chip: &mut Chip8) { 
+    let ry_val = chip.get_register_value(specs.ry);
+    let rx_val = chip.get_register_value(specs.rx);
+    if 0x80 & rx_val == 0x80 {
+        chip.set_register_value(15, chip.get_register_value(15) | 0x10); // set MSB was 1
+    } else {
+        chip.set_register_value(15, chip.get_register_value(15) & 0xEF); // unset MSB was 1
+    }
+    chip.set_register_value(specs.rx, rx_val >> ry_val);
+    chip.update_pc(None);    
+}
 }
 
 impl Executable for Opt8 {

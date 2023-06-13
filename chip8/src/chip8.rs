@@ -99,7 +99,7 @@ impl Chip8 {
             sp: 0x00, // access by STACK_INIT_ADDR + sp in memory
             delay_timer: None,
             sound_timer: None,
-            gfx: vec![vec![0_u8; 8]; 32],
+            gfx: vec![vec![255_u8; 8]; 32],
             routines: Vec::new()
         }
     }
@@ -447,6 +447,24 @@ impl Chip8 {
             "SUB" => {
                 match self.parse_common_registers(&clean_reg, inst[2]) {
                     Some((regx, regy)) => Ok(0x8005 | (regx << 8) | (regy << 4)),
+                    None => Err(format!("Error parsing instruction: {:?}", inst))
+                }
+            },
+            "SHR" => {
+                match self.parse_common_registers(&clean_reg, inst[2]) {
+                    Some((regx, regy)) => Ok(0x8006 | (regx << 8) | (regy << 4)),
+                    None => Err(format!("Error parsing instruction: {:?}", inst))
+                }
+            },
+            "SUBN" => {
+                match self.parse_common_registers(&clean_reg, inst[2]) {
+                    Some((regx, regy)) => Ok(0x8007 | (regx << 8) | (regy << 4)),
+                    None => Err(format!("Error parsing instruction: {:?}", inst))
+                }
+            },
+            "SHL" => {
+                match self.parse_common_registers(&clean_reg, inst[2]) {
+                    Some((regx, regy)) => Ok(0x800E | (regx << 8) | (regy << 4)),
                     None => Err(format!("Error parsing instruction: {:?}", inst))
                 }
             },

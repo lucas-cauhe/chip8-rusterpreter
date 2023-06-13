@@ -24,6 +24,9 @@ VF is used as flag (of, z,)
 VF partitioning ->
 0bit -> collision
 1bit -> last addition executed overflowed
+2bit -> last subtraction caused not borrow
+3bit -> LSB was 1 in last right shift
+4bit -> MSB was 1 in last left shift
 7bit -> draw
 -- Inaccessible registers to Chip-8 programs --
 Since these can't be used by user programs, subroutine's parameters and jumps
@@ -89,9 +92,10 @@ No caller context (register values) is saved
 
 
 TODO
-What happens with display collisions
+What happens with display collisions, overflow, borrows, etc... ✅ (used by the user and debugger)
 Parse Directives ✅
 2 new Display instructions
 Operations to be defined
 transform addresses from hex to base 10
 Create labels as "mylabel": Code
+Screen
