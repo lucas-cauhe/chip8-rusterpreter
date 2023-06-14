@@ -1,5 +1,5 @@
 use crate::chip8::Chip8;
-use super::{opt_8::Opt8, opt_f::OptF, opt_d::OptD, opt_1::Opt1, opt_2::Opt2, opt_3::Opt3, opt_4::Opt4, opt_5::Opt5, opt_6::Opt6, opt_7::Opt7};
+use super::{opt_8::Opt8, opt_f::OptF, opt_d::OptD, opt_1::Opt1, opt_2::Opt2, opt_3::Opt3, opt_4::Opt4, opt_5::Opt5, opt_6::Opt6, opt_7::Opt7, opt_a::OptA};
 
 pub struct OperationSpecs {
     pub nibble: u8,
@@ -22,6 +22,7 @@ impl OperationTab {
             0x60 => Some(Box::new(Opt6 {})),
             0x70 => Some(Box::new(Opt7 {})),
             0x80 => Some(Box::new(Opt8 {})),
+            0xA0 => Some(Box::new(OptA {})),
             0xD0 => Some(Box::new(OptD {})),
             0xF0 => Some(Box::new(OptF {})),
             _ => None

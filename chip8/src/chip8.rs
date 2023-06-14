@@ -89,7 +89,7 @@ impl Chip8 {
             }
             inter
         };
-
+        
         Chip8 {
             memory: Vec::from([0; 4096]),
             registers,
@@ -217,7 +217,7 @@ impl Chip8 {
     /// * `offset` - _vertical offset_
     pub fn get_gfx_sprite(&self, coords: (u8, u8), offset: usize) -> u64 {
         // take into acount the possible cyclic representation
-        let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
+        /* let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
         let target_col = coords.1 as usize % DISPLAY_WIDTH;
         let target_byte_mask = {
             let mut mask = 0x00000000;
@@ -227,7 +227,8 @@ impl Chip8 {
             mask
         };
         let row_gfx_value = u64::from_be_bytes(self.gfx[target_row].clone().try_into().unwrap());
-        target_byte_mask & row_gfx_value
+        target_byte_mask & row_gfx_value */
+        u64::from_be_bytes(self.gfx[coords.0 as usize].clone().try_into().unwrap())
     }
 
     ///	Sets a sprite to `sprite` at `coords` + vertical `offset`
@@ -769,7 +770,6 @@ mod tests {
                 assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1200000000000000); // 0x17 xor 0x05 = 0x12
                 assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2600000000000000); // 0x21 xor 0x07 = 0x26
             }
-
         }
 
         // TIMERS TEST

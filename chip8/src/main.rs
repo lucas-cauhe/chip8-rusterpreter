@@ -12,7 +12,7 @@ use crate::chip8::{Chip8, ProgramType};
 use std::env;
 use sdl2::{render::{Canvas, Texture}, video::Window};
 
-const WINDOW_WIDTH: u32 = 800;
+const WINDOW_WIDTH: u32 = 768;
 const WINDOW_HEIGHT: u32 = 600;
 
 
@@ -36,12 +36,9 @@ fn main() -> Result<(), String> {
     let mut texture = creator
         .create_texture_target(PixelFormatEnum::RGBA8888, WINDOW_WIDTH, WINDOW_HEIGHT)
         .map_err(|e| e.to_string())?;
-    canvas.set_draw_color(Color::RGB(255, 255, 255));
-    canvas.clear();
     
 
     chip.load_program(ProgramType::Main(file[1].as_str())).expect("Error loading program: ");
-    
     loop {
         if let Err(eop) = chip.execute_cycle() {
             println!("Program terminated with status: {:?}", eop.status);
@@ -65,8 +62,11 @@ fn main() -> Result<(), String> {
                 let mut rects = Vec::new();
                 for (no, row) in chip.get_gfx().iter().enumerate() {
                     for (px_no, px8) in row.iter().enumerate() {
+                        
                         for ind_px in 0..8 {
-                            if (*px8 >> ind_px) & 0x01 == 0x01  {
+                            
+                            
+                            if (*px8 >> ind_px) & 0x01 == 0x01 {
                                 rects.push(Rect::new((((px_no*8 + ind_px) as u32)*WINDOW_WIDTH / 64) as i32, 
                                 ((no as u32)*WINDOW_HEIGHT / 32) as i32,
                                 WINDOW_WIDTH / 64,
@@ -77,15 +77,15 @@ fn main() -> Result<(), String> {
                 }
                 canvas
                     .with_texture_canvas(&mut texture, |texture_canvas| {
-                        texture_canvas.clear();
+                        //texture_canvas.clear();
                         texture_canvas.set_draw_color(Color::RGBA(255, 0, 0, 255));
                         texture_canvas
-                            .fill_rects(&rects)
+                            .draw_rects(&rects)
                             .expect("could not fill rect");
                     })
                     .map_err(|e| e.to_string())?;
-                canvas.set_draw_color(Color::RGBA(0, 0, 0, 0));
-                canvas.clear();
+                canvas.set_draw_color(Color::RGBA(0, 255, 0, 0));
+                //canvas.clear();
                 canvas.copy_ex(
                     &texture,
                     None,

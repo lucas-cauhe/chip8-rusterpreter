@@ -1,6 +1,6 @@
+LD I, 1024 
 LD V1, V2
 LD VA, VE
 OR V3, V2
 DRW V1, V2, 5
 XOR V1, V1
-DRW V1, V3, 5
