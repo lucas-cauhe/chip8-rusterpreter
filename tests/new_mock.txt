@@ -1,4 +1,4 @@
-LD I, 1024 
+LD I, 0x400 
 LD V1, V2
 LD VA, VE
 OR V3, V2

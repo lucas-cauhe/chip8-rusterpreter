@@ -96,6 +96,7 @@ What happens with display collisions, overflow, borrows, etc... ✅ (used by the
 Parse Directives ✅
 2 new Display instructions
 Operations to be defined
-transform addresses from hex to base 10
+transform addresses from hex to base 10 ✅
 Create labels as "mylabel": Code
-Screen
+Define new directive for filling memory with data at specified address with !place_at
+Screen ✅

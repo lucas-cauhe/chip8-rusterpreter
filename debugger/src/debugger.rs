@@ -56,9 +56,7 @@ impl Debugger {
             "n" => {
                 // copy the working version of the loop action in chip8 main.rs
                 // tweak the screen variables
-                if let Err(eop) = self.chip.execute_cycle() {
-                    return Err("Program terminated with status: ".to_string() + &eop.status.to_string())
-                }
+                
                 if let Some(timer) = self.next_instruction_sets_timer() { 
                     // get counter value
                     let counter = self.get_next_instruction_timer_value();
@@ -69,7 +67,9 @@ impl Debugger {
                         
                     }
                 }
-                
+                if let Err(eop) = self.chip.execute_cycle() {
+                    return Err("Program terminated with status: ".to_string() + &eop.status.to_string())
+                }
                 
                 // check if you need to display gfx on screen
                 let vf = self.chip.get_register_value(15);

@@ -15,3 +15,5 @@ cargo run -p chip8
 ````
 cargo test -p <package>
 ````
+
+You can define memory address in hexadecimal form now

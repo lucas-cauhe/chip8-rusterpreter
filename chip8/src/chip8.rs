@@ -89,7 +89,7 @@ impl Chip8 {
             }
             inter
         };
-        
+
         Chip8 {
             memory: Vec::from([0; 4096]),
             registers,
@@ -286,10 +286,14 @@ impl Chip8 {
     pub fn load_program(&mut self, kind: ProgramType ) -> Result<(), String> {
         // parse file
         // (fixed, returns error) check there are no weird registers being used (from G-)
+        // transform hex addresses to decimal
+
         let load_addr: u16;
-        let code = match kind {
+        let mut code = match kind {
             ProgramType::Main(file) => {
                 let mut temp = fs::read_to_string(file).expect("I/O Error");
+                //self.parse_labels(&mut temp, None);
+                self.hex_2_dec(&mut temp);
                 self.parse_directives(&mut temp)?;
                 load_addr = PROGRAM_INIT_ADDR;
                 temp
@@ -302,7 +306,7 @@ impl Chip8 {
                 text.clone()
             }
         };
-        
+
         let mut inst_buff: Vec<u8> = Vec::new();
         for line in code.lines() {
             let inst: Vec<&str> = line.split(' ').collect();
@@ -315,6 +319,43 @@ impl Chip8 {
             self.memory[(load_addr as usize)+i] = inst;
         }
         Ok(())
+    }
+
+    /* fn parse_labels(&self, text: &mut String, save: Option<()>) {
+        static mut WHOLE_FILE: String = String::from("");
+        if save.is_none() {
+            unsafe {WHOLE_FILE = text.clone();}
+            return;
+        }
+        // while there are label definitions
+        while let Some(at) = text.find(":") {
+            // find label definition
+            let mut i = 0;
+            let label = "";
+            unsafe {
+                while at-i-1 > 0 && WHOLE_FILE[at-i-1..at-i].chars().collect::<Vec<char>>()[0] != '\n' {
+                    i -= 1;
+                }
+            }
+            // assign that label the memory address it labels
+            // difficult since labels might be shared accross routines
+            let label_addr;
+
+            // replace every label appearance for that memory address 
+            text.replace(label, &label_addr.to_string());
+            text.drain(at-i..at+1);
+        }
+    } */
+
+    fn hex_2_dec(&self, text: &mut String) {
+        while let Some(at) = text.find("0x") {
+            let mut i = 2;
+            while at+i+1 < text.len() && "0123456789abcdefABCDEF".contains(text[at+i..at+i+1].chars().collect::<Vec<char>>()[0])  {
+                i += 1;
+            }
+            let decimal_from_hex = u64::from_str_radix(&text[at+2..at+i], 16).unwrap();
+            *text = text.replacen(&text[at..at+i], &decimal_from_hex.to_string(), 1);
+        }
     }
 
     fn parse_directives(&mut self, text: &mut String) -> Result<(), String> {
@@ -614,6 +655,15 @@ mod tests {
         use crate::chip8::{RoutineParams, RoutinePurpose};
 
         use super::*;
+
+        #[test]
+        fn hex_2_dec_test() {
+            let test_chip = Chip8::new();
+            let mut test_string = String::from("this is a test\n bla0x10\n blip\n lal0x200a");
+            test_chip.hex_2_dec(&mut test_string);
+            assert_eq!("this is a test\n bla16\n blip\n lal512a", test_string);
+        }
+
         #[test]
         fn parse_common_registers_test() {
             let test_chip = Chip8::new();
