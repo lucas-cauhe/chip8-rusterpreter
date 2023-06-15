@@ -37,7 +37,7 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     
 
-    chip.load_program(ProgramType::Main(file[1].as_str()), None).expect("Error loading program: ");
+    chip.load_program(ProgramType::Main(file[1].as_str()), None, None).expect("Error loading program: ");
     loop {
         if let Err(eop) = chip.execute_cycle() {
             println!("Program terminated with status: {:?}", eop.status);

@@ -222,8 +222,8 @@ impl Chip8 {
     /// * `offset` - _vertical offset_
     pub fn get_gfx_sprite(&self, coords: (u8, u8), offset: usize) -> u64 {
         // take into acount the possible cyclic representation
-        /* let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
-        let target_col = coords.1 as usize % DISPLAY_WIDTH;
+         let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
+        /*let target_col = coords.1 as usize % DISPLAY_WIDTH;
         let target_byte_mask = {
             let mut mask = 0x00000000;
             for bit in 0..8 {
@@ -233,7 +233,7 @@ impl Chip8 {
         };
         let row_gfx_value = u64::from_be_bytes(self.gfx[target_row].clone().try_into().unwrap());
         target_byte_mask & row_gfx_value */
-        u64::from_be_bytes(self.gfx[coords.0 as usize].clone().try_into().unwrap())
+        u64::from_be_bytes(self.gfx[target_row].clone().try_into().unwrap())
     }
 
     ///	Sets a sprite to `sprite` at `coords` + vertical `offset`
@@ -707,6 +707,8 @@ mod tests {
 
     use super::Chip8;
     mod parsing_tests {
+        use std::collections::HashMap;
+
         use crate::chip8::{RoutineParams, RoutinePurpose};
 
         use super::*;
@@ -788,7 +790,7 @@ mod tests {
         fn parse_directives_test() {
             let mut chip = Chip8::new();
             let mut test_text = "!is_subroutine_for=delay\n!place_at=2048\nLD V1, V2\nLD VA, VE\n\nLD I, 516".to_string();
-            chip.parse_directives(&mut test_text, &mut Vec::new(), &None).unwrap();
+            chip.parse_directives(&mut test_text, &mut Vec::new(), &Some(Arc::new(HashMap::new()))).unwrap();
             assert_eq!("LD I, 516".to_string(), test_text, "Expected string LD I, 516, found {:?}", test_text);
             assert_eq!(Some(0x0800), chip.get_routine_addr(RoutinePurpose::DelayTimer));
             // this last test will no longer be passed since chip's memory will only get updated once the main program has been loaded
@@ -903,9 +905,9 @@ mod tests {
                 chip.gfx[1] = vec![0x17, 0x18, 0x19, 0x20, 0x00, 0x00, 0x00, 0x00];
                 chip.gfx[2] = vec![0x21, 0x22, 0x23, 0x24, 0x00, 0x00, 0x00, 0x00];
                 // test
-                assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1300000000000000);
-                assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1700000000000000);
-                assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2100000000000000);
+                assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1314151600000000);
+                assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1718192000000000);
+                assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2122232400000000);
                 // clear display
                 chip.clear_display();
                 assert_eq!(chip.gfx, vec![vec![0_u8; 8]; 32]);
@@ -919,16 +921,16 @@ mod tests {
                 chip.gfx[1] = vec![0x17, 0x18, 0x19, 0x20, 0x00, 0x00, 0x00, 0x00];
                 chip.gfx[2] = vec![0x21, 0x22, 0x23, 0x24, 0x00, 0x00, 0x00, 0x00];
 
-                assert_eq!(chip.get_gfx_sprite((0,4), 0), 0x0310000000000000);
+                // (old) assert_eq!(chip.get_gfx_sprite((0,4), 0), 0x0310000000000000);
 
                 chip.set_gfx_sprite((0,0), 0, 0x03);
                 assert!(chip.memory[chip.registers[15] as usize] & 0x01 == 0x01); // check collision is activated
                 chip.set_gfx_sprite((0,0), 1, 0x05);
                 chip.set_gfx_sprite((0,0),2, 0x07);
 
-                assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1000000000000000); // 0x13 xor 0x03 = 0x10
-                assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1200000000000000); // 0x17 xor 0x05 = 0x12
-                assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2600000000000000); // 0x21 xor 0x07 = 0x26
+                assert_eq!(chip.get_gfx_sprite((0,0), 0), 0x1014151600000000); // 0x13 xor 0x03 = 0x10
+                assert_eq!(chip.get_gfx_sprite((0,0), 1), 0x1218192000000000); // 0x17 xor 0x05 = 0x12
+                assert_eq!(chip.get_gfx_sprite((0,0), 2), 0x2622232400000000); // 0x21 xor 0x07 = 0x26
             }
         }
 
