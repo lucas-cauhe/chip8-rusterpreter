@@ -90,6 +90,26 @@ design debugger for interpreter programs
 ---- SUBROUTINE CALL ----
 No caller context (register values) is saved
 
+---- PARSING LABELS IS NOT EASY ----
+
+Given the case where multiple directives have been designed, with labels in them and having cross-references between labels in different routines in
+different memory addresses, it is not easy to determine exactly the address for each label without preprocessing before the actual code preprocessing.
+
+The code as in commit 1a561a43443a0c37399c569b1a619c90206b468e does not make it easy to perform a double preprocessing so another approach has been 
+designed.
+
+For every piece of code representing a routine described by some directives a thread will be launched in order to place
+
+1. create label dependencies graph
+2. before processing any directive -> create new arc memory  
+3. process directives by launching threads with code, arc memory and their graph nodes (if any)
+4. once all directives have been launched, the main program will be processed.
+5. if any thread for a given dependency hasn't had it resolved yet, it will wait blocked until it gets resolved
+6. move to chip's memory the arc memory
+7. destroy the graph
+
+
+
 
 TODO
 What happens with display collisions, overflow, borrows, etc... ✅ (used by the user and debugger)
@@ -100,3 +120,4 @@ transform addresses from hex to base 10 ✅
 Create labels as "mylabel": Code
 Define new directive for filling memory with data at specified address with !place_at
 Screen ✅
+Checkout offset in get_gfx_sprite

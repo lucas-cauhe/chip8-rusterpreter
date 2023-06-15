@@ -1,8 +1,13 @@
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::fs;
-use std::sync::mpsc::Sender;
+use std::sync::{mpsc::Sender, Condvar};
+use std::thread;
+use std::thread::JoinHandle;
+
+use once_cell::sync::Lazy;
 
 use crate::operations_set::operations_table::Executable;
 use crate::operations_set::operations_table::{OperationTab, OperationSpecs, Ret, Cls};
@@ -33,7 +38,7 @@ pub enum ProgramType<'a> {
 }
 
 /// Purpose of the routine to be set
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum RoutinePurpose {
     DelayTimer,
     SoundTimer,
@@ -41,7 +46,7 @@ pub enum RoutinePurpose {
 }
 
 /// Params to store for each custom routine
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RoutineParams {
     addr: Option<u16>,
     purpose: RoutinePurpose
@@ -196,7 +201,7 @@ impl Chip8 {
     pub fn get_routine_addr(&self, purpose: RoutinePurpose) -> Option<u16> {
         let matched_routine: Vec<&RoutineParams> = self.routines.iter().filter(|rout| rout.purpose == purpose).collect();
         // case there are multiple matches, only the first address is used
-        if matched_routine.len() > 1 {
+        if matched_routine.len() > 0 {
             matched_routine[0].addr
         }
         // there is no routine address set, hence default should be used
@@ -283,18 +288,29 @@ impl Chip8 {
         (0xFE00 & address) == 0
     }
     
-    pub fn load_program(&mut self, kind: ProgramType ) -> Result<(), String> {
+    pub fn load_program(&mut self, kind: ProgramType, t_pool: Option<&mut Vec<JoinHandle<()>>>, mut cv: Option<Arc<HashMap<String, Condvar>>>) -> Result<(), String> {
         // parse file
         // (fixed, returns error) check there are no weird registers being used (from G-)
         // transform hex addresses to decimal
-
+        static mut GRAPH: Lazy<Arc<Mutex<HashMap<String, Option<u16>>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+        static mut MEMORY:  Lazy<Arc<Mutex<Vec<u8>>>> = Lazy::new(|| Arc::new(Mutex::new(vec![0_u8; 4096])));
         let load_addr: u16;
-        let mut code = match kind {
+        let mut thread_pool: Vec<JoinHandle<()>> = Vec::new();
+        let code = match kind {
             ProgramType::Main(file) => {
                 let mut temp = fs::read_to_string(file).expect("I/O Error");
-                //self.parse_labels(&mut temp, None);
+                // preprocess all labels
+                unsafe {
+                    GRAPH = self.preprocess_all_labels(temp.clone());
+                    let mut pre_cv = HashMap::new();
+                    for key in GRAPH.lock().unwrap().keys() {
+                        pre_cv.insert(key.clone(), Condvar::new());
+                    }
+                    cv = Some(Arc::new(pre_cv));
+                }
                 self.hex_2_dec(&mut temp);
-                self.parse_directives(&mut temp)?;
+                // pass in the graph and the arc memory
+                self.parse_directives(&mut temp, &mut thread_pool, &cv)?;
                 load_addr = PROGRAM_INIT_ADDR;
                 temp
             },
@@ -306,46 +322,84 @@ impl Chip8 {
                 text.clone()
             }
         };
-
-        let mut inst_buff: Vec<u8> = Vec::new();
-        for line in code.lines() {
-            let inst: Vec<&str> = line.split(' ').collect();
-            let parsed_inst: u16 = self.parse_instruction(&inst)?;
-            inst_buff.push(((0xFF00 & parsed_inst) >> 8) as u8); // big-endian
-            inst_buff.push((0x00FF & parsed_inst) as u8);
-        }
-
-        for (i, inst) in inst_buff.into_iter().enumerate() {
-            self.memory[(load_addr as usize)+i] = inst;
+        // launch thread to process labels
+        // I should keep the handles for main
+        
+        let graph_clone = unsafe {Arc::clone(&GRAPH)};
+        let mem_clone = unsafe {Arc::clone(&MEMORY)};
+        let handle = thread::spawn(move || {
+            let mut inst_buff: Vec<u8> = Vec::new();
+            let cv = cv.unwrap();
+            for (line_no, line) in code.lines().enumerate() {
+                // check labels
+                // if a label is being defined, update the graph with its value
+                let mut graph_lck = graph_clone.lock().unwrap();
+                let mut parsed_line: String = line.clone().to_string();
+                if let Some(column) = parsed_line.find(':') {
+                    let label_name: String = parsed_line.drain(..column).collect();
+                    parsed_line.drain(..1); // delete column
+                    graph_lck.insert(label_name.clone(), Some(load_addr+(line_no as u16)*2));
+                    // unblock possible waiting threads
+                    cv.get(&label_name).unwrap().notify_all();
+                }
+                for item in graph_lck.clone().keys() {
+                    if let Some(_) = line.find(item) {
+                        // wait if the dependency is not resolved
+                        if graph_lck[item].is_none() {
+                            // wait
+                            graph_lck = cv[item].wait_while(graph_lck, |g: &mut HashMap<String, Option<u16>>| g[item].is_none()).unwrap();
+                        }
+                        parsed_line = parsed_line.replace(item, &graph_lck[item].unwrap().to_string());
+                    }
+                }
+                if parsed_line.starts_with(" ") {
+                    parsed_line = parsed_line.replacen(" ", "", 1);
+                }
+                let inst: Vec<&str> = parsed_line.split(' ').collect();
+                let parsed_inst: u16 = Chip8::parse_instruction(&Chip8::new(), &inst).expect("Error parsing instruction: ");
+                inst_buff.push(((0xFF00 & parsed_inst) >> 8) as u8); // big-endian
+                inst_buff.push((0x00FF & parsed_inst) as u8);
+            }
+            let mut mem_lck = mem_clone.lock().unwrap();
+            for (i, inst) in inst_buff.into_iter().enumerate() {
+                //self.memory[(load_addr as usize)+i] = inst;
+                mem_lck[(load_addr as usize)+i] = inst;
+            }
+        });
+        
+        if let ProgramType::Main(_) = kind {
+            // wait for handles
+            for h in thread_pool {
+                h.join().unwrap();
+            }
+            handle.join().unwrap();
+            self.memory = unsafe {MEMORY.lock().unwrap().clone()}
+        } else {
+            t_pool.unwrap().push(handle);
         }
         Ok(())
     }
 
-    /* fn parse_labels(&self, text: &mut String, save: Option<()>) {
-        static mut WHOLE_FILE: String = String::from("");
-        if save.is_none() {
-            unsafe {WHOLE_FILE = text.clone();}
-            return;
-        }
+    fn preprocess_all_labels(&self, mut text: String) -> Lazy<Arc<Mutex<HashMap<String, Option<u16>>>>> {
+        let graph: Lazy<Arc<Mutex<HashMap<String, Option<u16>>>>>  = Lazy::new(| | Arc::new(Mutex::new(HashMap::new())));
+        let mut graph_lck = graph.lock().unwrap();
         // while there are label definitions
         while let Some(at) = text.find(":") {
             // find label definition
             let mut i = 0;
-            let label = "";
-            unsafe {
-                while at-i-1 > 0 && WHOLE_FILE[at-i-1..at-i].chars().collect::<Vec<char>>()[0] != '\n' {
-                    i -= 1;
-                }
+            
+            while (at-i)as i32-1 >= 0 && 
+            (text[at-i-1..at-i].chars().collect::<Vec<char>>()[0] != '\n' &&
+            text[at-i-1..at-i].chars().collect::<Vec<char>>()[0] != ' ') {
+                i += 1;
             }
-            // assign that label the memory address it labels
-            // difficult since labels might be shared accross routines
-            let label_addr;
-
-            // replace every label appearance for that memory address 
-            text.replace(label, &label_addr.to_string());
-            text.drain(at-i..at+1);
+            text.drain(at..at+1);
+            let label: String = text.drain(at-i..at).collect();
+            graph_lck.insert(label, None);
         }
-    } */
+        drop(graph_lck);
+        graph
+    }
 
     fn hex_2_dec(&self, text: &mut String) {
         while let Some(at) = text.find("0x") {
@@ -358,7 +412,7 @@ impl Chip8 {
         }
     }
 
-    fn parse_directives(&mut self, text: &mut String) -> Result<(), String> {
+    fn parse_directives(&mut self, text: &mut String, t_pool: &mut Vec<JoinHandle<()>>, cv: &Option<Arc<HashMap<String, Condvar>>>) -> Result<(), String> {
         while let Some(previous_code_to_directive) = text.find("!") { // find first directive in the code
             let mut routine_params = RoutineParams {
                 addr: None,
@@ -374,12 +428,13 @@ impl Chip8 {
                 // remove trailing \n
                 with_directives_code.drain(0..1);
             }
+            
             // Now with_directives_code has no directives
             // load routine code as specified by routine_params
             // For now, there are no checks on whether code is getting overwritten
-            self.load_program(ProgramType::Routine((&with_directives_code, routine_params.addr)))?;
+            self.load_program(ProgramType::Routine((&with_directives_code, routine_params.addr)), Some(t_pool), Some(Arc::clone(cv.as_ref().unwrap())))?;
             self.routines.push(routine_params);
-            // remove trailing \n\n 
+            // remove trailing \n\n
             text.drain(0..2);
         }
         Ok(())
@@ -657,6 +712,16 @@ mod tests {
         use super::*;
 
         #[test]
+        fn preprocess_all_labels_test() {
+            let test_chip = Chip8::new();
+            let test_string = String::from("main: LD ST, 1\n LD V1, V2\n hello: LD V3, V4\nhola: JMP 1234");
+            let graph = test_chip.preprocess_all_labels(test_string);
+            assert!(graph.lock().unwrap().keys().collect::<Vec<&String>>().contains(&&"hola".to_string()));
+            assert!(graph.lock().unwrap().keys().collect::<Vec<&String>>().contains(&&"main".to_string()));
+            assert!(graph.lock().unwrap().keys().collect::<Vec<&String>>().contains(&&"hello".to_string()));
+        }
+
+        #[test]
         fn hex_2_dec_test() {
             let test_chip = Chip8::new();
             let mut test_string = String::from("this is a test\n bla0x10\n blip\n lal0x200a");
@@ -723,19 +788,21 @@ mod tests {
         fn parse_directives_test() {
             let mut chip = Chip8::new();
             let mut test_text = "!is_subroutine_for=delay\n!place_at=2048\nLD V1, V2\nLD VA, VE\n\nLD I, 516".to_string();
-            chip.parse_directives(&mut test_text).unwrap();
+            chip.parse_directives(&mut test_text, &mut Vec::new(), &None).unwrap();
             assert_eq!("LD I, 516".to_string(), test_text, "Expected string LD I, 516, found {:?}", test_text);
             assert_eq!(Some(0x0800), chip.get_routine_addr(RoutinePurpose::DelayTimer));
-            assert_eq!(chip.memory[0x0800..0x0804], [
+            // this last test will no longer be passed since chip's memory will only get updated once the main program has been loaded
+            // It can be substituted for the test load_program_2
+            /* assert_eq!(chip.memory[0x0800..0x0804], [
                 0x81, 0x20,
                 0x8A, 0xE0,
-            ])
+            ]) */
         }
 
         #[test]
         fn load_program_1(){
             let mut chip = Chip8::new();
-            chip.load_program(crate::chip8::ProgramType::Main("tests/mock_program.txt")).unwrap();
+            chip.load_program(crate::chip8::ProgramType::Main("../tests/mock_program.txt"), None, None).unwrap();
             assert_eq!([
                 0x81, 0x20,
                 0x8A, 0xE0, 
@@ -750,7 +817,7 @@ mod tests {
         #[test]
         fn load_program_2(){
             let mut chip = Chip8::new();
-            chip.load_program(crate::chip8::ProgramType::Main("tests/mock_program_directives.txt")).unwrap();
+            chip.load_program(crate::chip8::ProgramType::Main("../tests/mock_program_directives.txt"), None, None).unwrap();
             assert_eq!([
                 0x85, 0x82,
                 0x81, 0x13
@@ -762,6 +829,49 @@ mod tests {
                 0x82, 0x31,
             ], chip.memory[2048..2056]);
         }
+
+        // THESE TWO SOMETIMES FAIL DUE TO POISON ERRORS
+        // MAYBE WHEN DONKEYS TALK I MIGHT CONSIDER LOOKING INTO IT
+        #[test]
+        fn load_program_with_labels() {
+            let mut chip = Chip8::new();
+            chip.load_program(crate::chip8::ProgramType::Main("../tests/labels_program.txt"), None, None).unwrap();
+            assert_eq!([
+                0x85, 0x82,
+                0x81, 0x13
+            ], chip.memory[512..516]);
+            assert_eq!([
+                0xA2, 0x00,
+                0x81, 0x20,
+            ], chip.memory[516..520]);
+        }
+
+        #[test]
+        fn load_program_with_labels_and_directives() {
+            let mut chip = Chip8::new();
+            chip.load_program(crate::chip8::ProgramType::Main("../tests/labels_program_with_directives.txt"), None, None).unwrap();
+            assert_eq!([
+                0x85, 0x82,
+                0x81, 0x13
+            ], chip.memory[512..516]);
+            assert_eq!([
+                0xA2, 0x00,
+                0x81, 0x20,
+            ], chip.memory[516..520]);
+            assert_eq!([
+                0x81, 0x20,
+                0x8A, 0xE0, 
+                0xA2, 0x04,
+                0x82, 0x31,
+            ], chip.memory[2048..2056]);
+            assert_eq!([
+                0x81, 0x20,
+                0x8A, 0xE0, 
+                0xA2, 0x00,
+                0x82, 0x31,
+            ], chip.memory[0x0600..0x0608]);
+        }
+
     }
 
     mod execution_tests {

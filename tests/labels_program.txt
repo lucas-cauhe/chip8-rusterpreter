@@ -1,0 +1,4 @@
+main: AND V5, V8
+XOR V1, V1
+hello: LD I, main
+LD V1, V2

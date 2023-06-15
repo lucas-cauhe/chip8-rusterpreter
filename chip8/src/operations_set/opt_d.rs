@@ -39,7 +39,7 @@ impl Executable for OptD {
 
 #[cfg(test)]
 mod tests {
-    use crate::{operations_set::{operations_table::{OperationSpecs, Executable}, opt_d::OptD}, chip8::Chip8};
+    use crate::{operations_set::operations_table::OperationSpecs, chip8::Chip8};
 
     
     #[test]

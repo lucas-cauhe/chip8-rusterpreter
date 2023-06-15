@@ -6,11 +6,10 @@ extern crate sdl2;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::rect::{Point, Rect};
+use sdl2::rect::Rect;
 
 use crate::chip8::{Chip8, ProgramType};
 use std::env;
-use sdl2::{render::{Canvas, Texture}, video::Window};
 
 const WINDOW_WIDTH: u32 = 768;
 const WINDOW_HEIGHT: u32 = 600;
@@ -38,7 +37,7 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     
 
-    chip.load_program(ProgramType::Main(file[1].as_str())).expect("Error loading program: ");
+    chip.load_program(ProgramType::Main(file[1].as_str()), None).expect("Error loading program: ");
     loop {
         if let Err(eop) = chip.execute_cycle() {
             println!("Program terminated with status: {:?}", eop.status);
