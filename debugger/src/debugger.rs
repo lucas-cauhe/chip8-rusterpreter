@@ -14,7 +14,7 @@ pub struct Debugger {
 impl Debugger {
     pub fn new(program: &str) -> Self {
         let mut chip = Chip8::new();
-        chip.load_program(ProgramType::Main(program)).unwrap();
+        chip.load_program(ProgramType::Main(program), None, None).unwrap();
         chip.set_register_value(2, 255);
         Self { 
             display: Display::new(program),

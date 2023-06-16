@@ -109,7 +109,10 @@ For every piece of code representing a routine described by some directives a th
 7. destroy the graph
 
 
-
+----- AVAILABLE FEATURES -----
+Directives definition
+Address transformation from hexadecimal to base 10
+Code labeling so as to avoid thinking of memory addresses and their offset.
 
 TODO
 What happens with display collisions, overflow, borrows, etc... ✅ (used by the user and debugger)
@@ -120,4 +123,4 @@ transform addresses from hex to base 10 ✅
 Create labels as "mylabel": Code ✅
 Define new directive for filling memory with data at specified address with !place_at
 Screen ✅
-Checkout offset in get_gfx_sprite
+

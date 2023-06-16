@@ -27,6 +27,7 @@ const EOP_OPT_CODE: u16 = 0x0000;
 #[derive(Debug)]
 pub struct EopError {
     pub status: u8,
+    pub message: String
 }
 
 /// Choose type of program to be loaded
@@ -142,13 +143,13 @@ impl Chip8 {
         self.gfx = vec![vec![0_u8; 8]; 32];
     }
     
-    ///	Modify pc's value, if `increment` is None, hop to next instruction (pc+2)
+    ///	Modify pc's value, if `increment_or_set` is None, hop to next instruction (pc+2)
     ///
     ///	# _Arguments_
     ///
-    /// * `increment` - _Load address of subroutine_
-    pub fn update_pc(&mut self, increment: Option<u16>) {
-        self.pc = match increment {
+    /// * `increment_or_set` - _Load address of subroutine_
+    pub fn update_pc(&mut self, increment_or_set: Option<u16>) {
+        self.pc = match increment_or_set {
             Some(addr) => addr,
             None => self.pc+0x0002
         }
@@ -209,7 +210,7 @@ impl Chip8 {
             None
         }
     }
-    pub fn get_gfx(&self) -> &[Vec<u8>] {
+    pub fn get_gfx<'a>(&'a self) -> &'a [Vec<u8>] {
         self.gfx.as_slice()
     }
 
@@ -221,18 +222,7 @@ impl Chip8 {
     /// * `coords` - _pixel-based coordinates_
     /// * `offset` - _vertical offset_
     pub fn get_gfx_sprite(&self, coords: (u8, u8), offset: usize) -> u64 {
-        // take into acount the possible cyclic representation
-         let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
-        /*let target_col = coords.1 as usize % DISPLAY_WIDTH;
-        let target_byte_mask = {
-            let mut mask = 0x00000000;
-            for bit in 0..8 {
-                mask |= 1 << (DISPLAY_WIDTH-1-((target_col+bit) % DISPLAY_WIDTH));
-            }
-            mask
-        };
-        let row_gfx_value = u64::from_be_bytes(self.gfx[target_row].clone().try_into().unwrap());
-        target_byte_mask & row_gfx_value */
+        let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
         u64::from_be_bytes(self.gfx[target_row].clone().try_into().unwrap())
     }
 
@@ -571,7 +561,16 @@ impl Chip8 {
                     None => Err(format!("Error parsing instruction: {:?}", inst))
                 }
             },
-            "JP" => Ok(0x1000 | (0x0FFF & inst[1].parse::<u16>().unwrap())),
+            "JP" => {
+                // is OptB
+                if inst.len() > 2 {
+                    Ok(0xB000 | (0x0FFF & inst[2].parse::<u16>().unwrap()))
+                }
+                // is Opt1
+                else {
+                    Ok(0x1000 | (0x0FFF & inst[1].parse::<u16>().unwrap()))
+                }
+            },
             "CALL" => Ok(0x2000 | (0x0FFF & inst[1].parse::<u16>().unwrap())),
             "SE" => {
                 let regs = self.parse_common_registers(&clean_reg, inst[2]).unwrap();
@@ -585,8 +584,20 @@ impl Chip8 {
                 }
             },
             "SNE" => {
-                let (rx, _) = self.parse_common_registers(&clean_reg, "r2").unwrap();
-                Ok(0x4000 | (rx << 8) | (0x00FF & inst[2].parse::<u16>().unwrap()))
+                // is Opt9
+                if inst[2].chars().nth(0).unwrap() == 'V' {
+                    let (rx, ry) = self.parse_common_registers(&clean_reg, inst[2]).unwrap();
+                    Ok(0x9000 | (rx << 8) | (ry << 4))
+                }
+                // is Opt4 
+                else {
+                    let (rx, _) = self.parse_common_registers(&clean_reg, "r1").unwrap();
+                    Ok(0x4000 | (rx << 8) | (0x00FF & inst[2].parse::<u16>().unwrap()))
+                }
+            },
+            "RND" => {
+                let (rx, _) = self.parse_common_registers(&clean_reg, "r1").unwrap();
+                Ok(0xC000 | (rx << 8) | (0x00FF & inst[2].parse::<u16>().unwrap()))
             }
             "RET" => Ok(0x00EE),
             "CLS" => Ok(0x00E0),
@@ -613,7 +624,7 @@ impl Chip8 {
 
         // Decode opcode
         if next_opcode == EOP_OPT_CODE {
-            return Err(EopError {status: 0})
+            return Err(EopError {status: 0, message: "".to_string()})
         }
         // special operations
         let operation: Box<dyn Executable>  = match next_opcode {
@@ -635,7 +646,9 @@ impl Chip8 {
         // Execute
 
             // execute retrieved operation with chip parameters
-        operation.execute(opt_specs, self).expect("Error in operation execution: ");
+        if let Err(cause) = operation.execute(opt_specs, self) {
+            return Err(EopError { status: 1, message: "Error in operation execution: ".to_string() + &cause })
+        }
 
         // Update timers
         // Perhaps handling these as interruptions would be better
@@ -645,7 +658,9 @@ impl Chip8 {
                 let t_left = timer.lock().unwrap();
                 if t_left.timer == 0 {
                     // dispatch setter subroutine
-                    self.call_subroutine(t_left.rti).expect("Error handling subroutine: ");
+                    if let Err(cause) = self.call_subroutine(t_left.rti){
+                        return Err(EopError { status: 1, message: "Error handling subroutine: ".to_string() + &cause });
+                    }
                     true
                 } else {
                     drop(t_left);
@@ -662,7 +677,9 @@ impl Chip8 {
                 let t_left = timer.lock().unwrap();
                 if t_left.timer == 0  && !delay_t_called {
                     // dispatch setter subroutine
-                    self.call_subroutine(t_left.rti).expect("Error handling subroutine");
+                    if let Err(cause) = self.call_subroutine(t_left.rti){
+                        return Err(EopError { status: 1, message: "Error handling subroutine: ".to_string() + &cause });
+                    }
                 } else {
                     drop(t_left);
                     self.sound_timer = Some((timer, ch))

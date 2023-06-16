@@ -2,6 +2,8 @@ mod chip8;
 mod timers;
 mod operations_set;
 extern crate sdl2;
+#[cfg(feature = "rand")]
+extern crate rand;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -40,7 +42,7 @@ fn main() -> Result<(), String> {
     chip.load_program(ProgramType::Main(file[1].as_str()), None, None).expect("Error loading program: ");
     loop {
         if let Err(eop) = chip.execute_cycle() {
-            println!("Program terminated with status: {:?}", eop.status);
+            println!("Program terminated with status: {:?}", eop);
             break;
         }
         
