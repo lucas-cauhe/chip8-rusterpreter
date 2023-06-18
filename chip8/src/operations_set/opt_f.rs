@@ -7,6 +7,7 @@ impl OptF {
         match specs.constant {
             0x15 => Some(self.execute_x15(specs, chip)),
             0x18 => Some(self.execute_x18(specs, chip)),
+            0x55 => Some(self.execute_x55(specs, chip)),
             // ...
             _ => None// invalid nibble
         }
@@ -33,6 +34,16 @@ impl OptF {
         let rx = chip.get_register_value(specs.rx);
         let sound_timer_addr = chip.get_routine_addr(RoutinePurpose::SoundTimer);
         chip.set_sound_timer(rx, sound_timer_addr);
+        chip.update_pc(None);
+    }
+
+    /// Fx55 - LD [I], Vx
+    /// 
+    ///Store registers V0 through Vx in memory starting at location I.
+    ///
+    ///The interpreter copies the values of registers V0 through Vx into memory, starting at the address in I.
+    fn execute_x55(&self, specs: OperationSpecs, chip: &mut Chip8) {
+        (0..specs.rx+1).into_iter().for_each(|r| chip.set_memory_value(chip.get_register_value(r)));
         chip.update_pc(None);
     }
 }

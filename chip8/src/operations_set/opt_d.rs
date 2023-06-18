@@ -22,9 +22,9 @@ impl Executable for OptD {
 
         // take coordinates values
         let coord = (chip.get_register_value(specs.rx), chip.get_register_value(specs.ry));
-
         for i in 0..specs.nibble as usize {
             let sprite = chip.load_i_address_value(i);
+            println!("{sprite}");
             chip.set_gfx_sprite(coord, i, sprite);
         }
         

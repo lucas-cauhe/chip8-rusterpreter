@@ -9,7 +9,6 @@ use rand;
 /// 
 /// The interpreter generates a random number from 0 to 255, which is then ANDed with the value kk. 
 /// The results are stored in Vx. See instruction 8xy2 for more information on AND.
-
 pub struct OptC {}
 impl Executable for OptC {
     fn execute(&self, specs: OperationSpecs, chip: &mut Chip8) -> Result<(), String> {

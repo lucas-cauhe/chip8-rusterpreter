@@ -81,7 +81,7 @@ fn main() -> Result<(), String> {
                         //texture_canvas.clear();
                         texture_canvas.set_draw_color(Color::RGBA(255, 0, 0, 255));
                         texture_canvas
-                            .draw_rects(&rects)
+                            .fill_rects(&rects)
                             .expect("could not fill rect");
                     })
                     .map_err(|e| e.to_string())?;

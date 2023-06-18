@@ -95,17 +95,16 @@ impl Chip8 {
             }
             inter
         };
-
         Chip8 {
-            memory: Vec::from([0; 4096]),
+            memory: [].to_vec(),
             registers,
             stack,
             i_register: 0x000,
             pc: PROGRAM_INIT_ADDR,
-            sp: 0x00, // access by STACK_INIT_ADDR + sp in memory
+            sp: 0x00, // access by STACK_INIT_ADDR + sp*2 in memory or stack[sp]
             delay_timer: None,
             sound_timer: None,
-            gfx: vec![vec![255_u8; 8]; 32],
+            gfx: vec![vec![0_u8; 8]; 32],
             routines: Vec::new()
         }
     }
@@ -130,6 +129,10 @@ impl Chip8 {
 
     pub fn set_i_register_value(&mut self, value: u16) {
         self.i_register = value;
+    }
+
+    pub fn set_memory_value(&mut self, value: u8) {
+        self.memory[self.i_register as usize] = value;
     }
 
     ///	Handles the logic for leaving a subroutine
@@ -189,6 +192,7 @@ impl Chip8 {
     ///
     /// * `offset` - _offset to add to I-register value_
     pub fn load_i_address_value(&self, offset: usize) -> u8 {
+        println!("{}", self.i_register);
         self.memory[self.i_register as usize + offset]
     }
 
@@ -363,7 +367,7 @@ impl Chip8 {
                 h.join().unwrap();
             }
             handle.join().unwrap();
-            self.memory = unsafe {MEMORY.lock().unwrap().clone()}
+            self.memory = unsafe {MEMORY.lock().unwrap().clone()};
         } else {
             t_pool.unwrap().push(handle);
         }
@@ -469,6 +473,10 @@ impl Chip8 {
                             Ok(0xA000 | addr_mask)
                         }
                     },
+                    "[I]" => {
+                        let (rx, _) = self.parse_common_registers(inst[2], "r1").unwrap();
+                        Ok(0xF055 | (rx << 8))
+                    }
                     "DT" => {
                         let vx = inst[2].chars().nth(1).unwrap().to_digit(16).unwrap() as u16;
                         let vx_mask = 0x0F00 & (vx << 8);
