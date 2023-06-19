@@ -2,3 +2,4 @@
 .debugger
 .gitignore
 .vscode
+chip8-config.yaml

@@ -5,7 +5,7 @@ mod config;
 extern crate sdl2;
 extern crate rand;
 
-use ::chip8::chip8::ChipConfig;
+use config::parse_display;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -14,9 +14,6 @@ use sdl2::rect::Rect;
 use crate::chip8::{Chip8, ProgramType};
 use std::env;
 
-const WINDOW_WIDTH: u32 = 768;
-const WINDOW_HEIGHT: u32 = 600;
-
 
 
 fn main() -> Result<(), String> {
@@ -24,9 +21,10 @@ fn main() -> Result<(), String> {
     let file: Vec<String> = env::args().collect();
     let sdl2_context = sdl2::init()?;
     let video_subsystem = sdl2_context.video()?;
+    let display_config = parse_display();
 
     let window = video_subsystem
-        .window("rust-sdl2 demo", WINDOW_WIDTH, WINDOW_HEIGHT)
+        .window("rust-sdl2 demo", display_config.window_width, display_config.window_height)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
@@ -37,7 +35,7 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let creator = canvas.texture_creator();
     let mut texture = creator
-        .create_texture_target(PixelFormatEnum::RGBA8888, WINDOW_WIDTH, WINDOW_HEIGHT)
+        .create_texture_target(PixelFormatEnum::RGBA8888, display_config.window_width, display_config.window_height)
         .map_err(|e| e.to_string())?;
     
 
@@ -70,10 +68,10 @@ fn main() -> Result<(), String> {
                             
                             
                             if (*px8 >> ind_px) & 0x01 == 0x01 {
-                                rects.push(Rect::new((((px_no*8 + ind_px) as u32)*WINDOW_WIDTH / 64) as i32, 
-                                ((no as u32)*WINDOW_HEIGHT / 32) as i32,
-                                WINDOW_WIDTH / 64,
-                                WINDOW_HEIGHT / 32));
+                                rects.push(Rect::new((((px_no*8 + ind_px) as u32)*display_config.window_width / 64) as i32, 
+                                ((no as u32)*display_config.window_height / 32) as i32,
+                                display_config.window_width / 64,
+                                display_config.window_height / 32));
                             }
                         }
                     }
