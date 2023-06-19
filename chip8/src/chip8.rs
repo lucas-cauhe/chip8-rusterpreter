@@ -8,21 +8,25 @@ use std::thread;
 use std::thread::JoinHandle;
 
 use once_cell::sync::Lazy;
+use serde::{Serialize, Deserialize};
 
+use crate::config::parse_chip;
 use crate::operations_set::operations_table::Executable;
 use crate::operations_set::operations_table::{OperationTab, OperationSpecs, Ret, Cls};
 use crate::timers::Signals;
 use crate::timers::TimerThread;
 
-
-const FIRST_REGISTER_ADDR: u16 = 0x010;
-const STACK_INIT_ADDR: u16 = 0x020; // 16-bit aligned
-const STACK_CANARY: u16 = 0x040; // if stack pointer tries to access a higher or equal address to this, raise exception
-const PROGRAM_INIT_ADDR: u16 = 0x200;
-pub const RTI_DEFAULT_ADDR: u16 = 0x600;
-const DISPLAY_HEIGHT: usize = 32;
-const DISPLAY_WIDTH: usize = 64;
-const EOP_OPT_CODE: u16 = 0x0000;
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ChipConfig {
+    pub first_register_addr: u16,
+    pub stack_init_addr: u16,
+    pub stack_canary: u16,
+    pub program_init: u16,
+    pub rti_default_addr: u16,
+    pub display_height: usize,
+    pub display_width: usize,
+    pub eop_opt_code: u16
+}
 
 #[derive(Debug)]
 pub struct EopError {
@@ -74,16 +78,19 @@ pub struct Chip8 {
     /// graphics
     gfx: Vec<Vec<u8>>,
     /// list of user-defined routines
-    routines: Vec<RoutineParams>
+    routines: Vec<RoutineParams>,
+    /// chip configuration constants
+    config: ChipConfig
 }
 
 impl Chip8 {
     pub fn new() -> Self {
-        
+        let config = parse_chip();
+        println!("{:?}", config);
         let registers: Vec<u16> = {
             let mut inter = Vec::new();
             for i in 0..16 {
-               inter.push(FIRST_REGISTER_ADDR + (i as u16));
+               inter.push(config.first_register_addr + (i as u16));
             }
             inter
         };
@@ -91,21 +98,23 @@ impl Chip8 {
         let stack: Vec<u16> = {
             let mut inter = Vec::new();
             for i in 0..16 {
-               inter.push(STACK_INIT_ADDR + (2*i as u16));
+               inter.push(config.stack_init_addr + (2*i as u16));
             }
             inter
         };
+        
         Chip8 {
             memory: [].to_vec(),
             registers,
             stack,
             i_register: 0x000,
-            pc: PROGRAM_INIT_ADDR,
+            pc: config.program_init,
             sp: 0x00, // access by STACK_INIT_ADDR + sp*2 in memory or stack[sp]
             delay_timer: None,
             sound_timer: None,
             gfx: vec![vec![0_u8; 8]; 32],
-            routines: Vec::new()
+            routines: Vec::new(),
+            config
         }
     }
 
@@ -192,7 +201,6 @@ impl Chip8 {
     ///
     /// * `offset` - _offset to add to I-register value_
     pub fn load_i_address_value(&self, offset: usize) -> u8 {
-        println!("{}", self.i_register);
         self.memory[self.i_register as usize + offset]
     }
 
@@ -226,7 +234,7 @@ impl Chip8 {
     /// * `coords` - _pixel-based coordinates_
     /// * `offset` - _vertical offset_
     pub fn get_gfx_sprite(&self, coords: (u8, u8), offset: usize) -> u64 {
-        let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
+        let target_row = (coords.0 as usize + offset) % self.config.display_height;
         u64::from_be_bytes(self.gfx[target_row].clone().try_into().unwrap())
     }
 
@@ -238,8 +246,8 @@ impl Chip8 {
     /// * `offset` - _vertical offset_
     /// * `sprite` - _sprite to store_
     pub fn set_gfx_sprite(&mut self, coords: (u8, u8), offset: usize, sprite: u8) {
-        let target_row = (coords.0 as usize + offset) % DISPLAY_HEIGHT;
-        let _target_col = coords.1 as usize % DISPLAY_WIDTH;
+        let target_row = (coords.0 as usize + offset) % self.config.display_height;
+        let _target_col = coords.1 as usize % self.config.display_width;
         let prev_sprite = self.get_gfx_sprite(coords, offset);
         let xor_sprite = (sprite as u64).rotate_right(8+coords.1 as u32) ^ prev_sprite;
 
@@ -249,7 +257,7 @@ impl Chip8 {
         }
         // draw it in gfx
         for i in 0..8 {
-            self.gfx[target_row][i] = (((0xFF as u64).rotate_right((8*(i+1)) as u32) & xor_sprite) >> (DISPLAY_WIDTH-((i+1)*8))) as u8;
+            self.gfx[target_row][i] = (((0xFF as u64).rotate_right((8*(i+1)) as u32) & xor_sprite) >> (self.config.display_width-((i+1)*8))) as u8;
         }
     }
 
@@ -265,7 +273,12 @@ impl Chip8 {
                 ch.send(Signals::KILL).expect("Failed to send message to delay timer thread");
             }
         }
-        self.delay_timer = Some(TimerThread::launch(val, rti));
+        let rti_ = match rti {
+            Some(addr) => addr,
+            None => self.config.rti_default_addr
+        };
+        
+        self.delay_timer = Some(TimerThread::launch(val, rti_));
     }
 
     pub fn set_sound_timer(&mut self, val: u8, rti: Option<u16>) {
@@ -275,7 +288,11 @@ impl Chip8 {
                 ch.send(Signals::KILL).expect("Failed to send message to delay timer thread");
             }
         }
-        self.sound_timer = Some(TimerThread::launch(val, rti));
+        let rti_ = match rti {
+            Some(addr) => addr,
+            None => self.config.rti_default_addr
+        };
+        self.sound_timer = Some(TimerThread::launch(val, rti_));
     }
 
     pub fn address_out_of_bounds(address: u16) -> bool {
@@ -305,13 +322,13 @@ impl Chip8 {
                 self.hex_2_dec(&mut temp);
                 // pass in the graph and the arc memory
                 self.parse_directives(&mut temp, &mut thread_pool, &cv)?;
-                load_addr = PROGRAM_INIT_ADDR;
+                load_addr = self.config.program_init;
                 temp
             },
             ProgramType::Routine((text, rt_addr)) => {
                 load_addr = match rt_addr {
                     Some(addr) => addr,
-                    None => RTI_DEFAULT_ADDR
+                    None => self.config.rti_default_addr
                 };
                 text.clone()
             }
@@ -631,7 +648,7 @@ impl Chip8 {
         let next_opcode: u16 = ((self.memory[(self.pc as usize)] as u16) << 8) | self.memory[(self.pc as usize)+1] as u16;
 
         // Decode opcode
-        if next_opcode == EOP_OPT_CODE {
+        if next_opcode == self.config.eop_opt_code {
             return Err(EopError {status: 0, message: "".to_string()})
         }
         // special operations
@@ -702,8 +719,8 @@ impl Chip8 {
 
     pub fn call_subroutine(&mut self, addr: u16) -> Result<(), String>{
         // check stack overflow
-        let next_sp = STACK_INIT_ADDR + (self.sp as u16)*2;
-        if next_sp == STACK_CANARY {
+        let next_sp = self.config.stack_init_addr + (self.sp as u16)*2;
+        if next_sp == self.config.stack_canary {
             Err("Reached stack canary: buffer overflow".to_string())
         }
         else {
@@ -727,8 +744,6 @@ impl Chip8 {
 mod tests {
 
     use std::{thread, time::Duration, sync::Arc};
-
-    use crate::chip8::{FIRST_REGISTER_ADDR, PROGRAM_INIT_ADDR, RTI_DEFAULT_ADDR, STACK_INIT_ADDR};
 
     use super::Chip8;
     mod parsing_tests {
@@ -908,10 +923,10 @@ mod tests {
         #[test]
         fn call_subroutine_test() {
             let mut chip = Chip8::new();
-            chip.call_subroutine(RTI_DEFAULT_ADDR).unwrap();
-            assert_eq!(chip.pc, RTI_DEFAULT_ADDR);
+            chip.call_subroutine(chip.config.rti_default_addr).unwrap();
+            assert_eq!(chip.pc, chip.config.rti_default_addr);
             // test stack storage
-            assert_eq!(chip.memory[STACK_INIT_ADDR as usize..STACK_INIT_ADDR as usize+2], [0x02, 0x00]);
+            assert_eq!(chip.memory[chip.config.stack_init_addr as usize..chip.config.stack_init_addr as usize+2], [0x02, 0x00]);
             assert_eq!(chip.sp, 1);
             // return from subroutine
             chip.leave_subroutine();
@@ -974,13 +989,13 @@ mod tests {
                 purpose: crate::chip8::RoutinePurpose::SoundTimer
             });
             // set register values
-            chip.memory[(FIRST_REGISTER_ADDR as usize) + 3] = 0x02;
-            chip.memory[(FIRST_REGISTER_ADDR as usize) + 4] = 0x02;
+            chip.memory[(chip.config.first_register_addr as usize) + 3] = 0x02;
+            chip.memory[(chip.config.first_register_addr as usize) + 4] = 0x02;
             for i in 0..test_prog.len() {
-                chip.memory[ (PROGRAM_INIT_ADDR as usize)+ i] = test_prog[i];
+                chip.memory[ (chip.config.program_init as usize)+ i] = test_prog[i];
             }
-            chip.memory[RTI_DEFAULT_ADDR as usize] = 0x81;
-            chip.memory[RTI_DEFAULT_ADDR as usize+1] = 0x11;
+            chip.memory[chip.config.rti_default_addr as usize] = 0x81;
+            chip.memory[chip.config.rti_default_addr as usize+1] = 0x11;
 
             chip.execute_cycle().unwrap();
 
@@ -994,13 +1009,13 @@ mod tests {
             chip.execute_cycle().unwrap();
 
             // delay timer's subroutine
-            assert_eq!(RTI_DEFAULT_ADDR, chip.pc);
+            assert_eq!(chip.config.rti_default_addr, chip.pc);
             thread::sleep(Duration::new(1, 0));
 
             chip.execute_cycle().unwrap();
 
             // sound timer's subroutine
-            assert_eq!(RTI_DEFAULT_ADDR, chip.pc);
+            assert_eq!(chip.config.rti_default_addr, chip.pc);
             thread::sleep(Duration::new(1, 0));
             
         }

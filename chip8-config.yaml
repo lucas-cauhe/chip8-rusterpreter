@@ -1,0 +1,2 @@
+- !Chip
+  rti_default_addr: 0x700

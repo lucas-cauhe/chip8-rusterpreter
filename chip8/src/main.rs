@@ -1,10 +1,11 @@
 mod chip8;
 mod timers;
 mod operations_set;
+mod config;
 extern crate sdl2;
-#[cfg(feature = "rand")]
 extern crate rand;
 
+use ::chip8::chip8::ChipConfig;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -17,12 +18,13 @@ const WINDOW_WIDTH: u32 = 768;
 const WINDOW_HEIGHT: u32 = 600;
 
 
+
 fn main() -> Result<(), String> {
     let mut chip = Chip8::new();
     let file: Vec<String> = env::args().collect();
     let sdl2_context = sdl2::init()?;
     let video_subsystem = sdl2_context.video()?;
-    
+
     let window = video_subsystem
         .window("rust-sdl2 demo", WINDOW_WIDTH, WINDOW_HEIGHT)
         .position_centered()
@@ -86,7 +88,7 @@ fn main() -> Result<(), String> {
                     })
                     .map_err(|e| e.to_string())?;
                 canvas.set_draw_color(Color::RGBA(0, 255, 0, 0));
-                //canvas.clear();
+                canvas.clear();
                 canvas.copy_ex(
                     &texture,
                     None,

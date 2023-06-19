@@ -1,7 +1,5 @@
 use std::{thread, sync::{Arc, Mutex, mpsc::{self, Sender, TryRecvError}}};
-use std::time::{Duration};
-
-use crate::chip8::RTI_DEFAULT_ADDR;
+use std::time::Duration;
 
 /// Unix-like signals to be sent accross threads (specially for timers)
 pub enum Signals {
@@ -27,13 +25,10 @@ impl TimerThread {
     ///
     /// * `count` - _count to set the timer to_
     /// * `rti` - _address where to handle the interruption_
-    pub fn launch(count: u8, rti: Option<u16>) -> (Arc<Mutex<Self>>, Sender<Signals>) {
+    pub fn launch(count: u8, rti: u16) -> (Arc<Mutex<Self>>, Sender<Signals>) {
         let new_timer = Arc::new(Mutex::new(TimerThread { 
             timer: count, 
-            rti: match rti {
-                Some(addr) => addr,
-                None => RTI_DEFAULT_ADDR
-            }
+            rti
         }));
         let new_timer_clone = Arc::clone(&new_timer);
         let (tx, rx) = mpsc::channel::<Signals>();
@@ -75,11 +70,11 @@ impl TimerThread {
 #[cfg(test)]
 mod tests {
     use std::{thread, time::Duration, sync::Arc};
-
+    use crate::config::RTI_DEFAULT_ADDR;
     use super::TimerThread;
     #[test]
     fn timer_setup() {
-        let (timer, _s) = TimerThread::launch(10, None);
+        let (timer, _s) = TimerThread::launch(10, RTI_DEFAULT_ADDR);
         let mut times = [0; 5];
         for i in 0..5 {
             thread::sleep(Duration::new(0, 40_000_000));
@@ -93,7 +88,7 @@ mod tests {
 
     #[test]
     fn timer_kill() {
-        let (timer, s) = TimerThread::launch(10, None);
+        let (timer, s) = TimerThread::launch(10, RTI_DEFAULT_ADDR);
         s.send(crate::timers::Signals::KILL).unwrap();
         // let scheduler select the other thread
         thread::sleep(Duration::new(0,50_000_000));
