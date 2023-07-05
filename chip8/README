@@ -63,7 +63,7 @@ Reset registers, flags, special registers, peripherals (everything)
 
 -- Execution --
 
-Iterate over memory until you hit with EOP (End Of Program)
+Iterate over memory until you hit EOP (End Of Program)
 
 -- Timers, sound and display --
 For timers there will be a 'compiler directive' where to specify the address of the next block of code and whether
@@ -117,10 +117,8 @@ Code labeling so as to avoid thinking of memory addresses and their offset.
 TODO
 What happens with display collisions, overflow, borrows, etc... ✅ (used by the user and debugger)
 Parse Directives ✅
-2 new Display instructions
-Operations to be defined
+Operations to be defined ✅
 transform addresses from hex to base 10 ✅
 Create labels as "mylabel": Code ✅
-Define new directive for filling memory with data at specified address with !place_at
+Define new directive for filling memory with data at specified address with !place_at, !fill=
 Screen ✅
-

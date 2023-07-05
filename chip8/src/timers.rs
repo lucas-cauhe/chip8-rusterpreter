@@ -1,5 +1,6 @@
-use std::{thread, sync::{Arc, Mutex, mpsc::{self, Sender, TryRecvError}}};
+use std::{thread, sync::{Arc, /*Mutex,*/ mpsc::{self, Sender, TryRecvError}}};
 use std::time::Duration;
+use parking_lot::Mutex;
 
 /// Unix-like signals to be sent accross threads (specially for timers)
 pub enum Signals {
@@ -55,7 +56,7 @@ impl TimerThread {
                     },
                     Err(TryRecvError::Empty) => {}
                 }
-                let mut t = new_timer_clone.lock().unwrap();
+                let mut t = new_timer_clone.lock(); //.unwrap();
                 t.timer -= 1;
                 if t.timer == 0 {
                     break;
@@ -78,7 +79,7 @@ mod tests {
         let mut times = [0; 5];
         for i in 0..5 {
             thread::sleep(Duration::new(0, 40_000_000));
-            let timer_lck = timer.lock().unwrap();
+            let timer_lck = timer.lock(); //.unwrap();
             times[i] = timer_lck.timer;
         }
         for i in 1..5 {

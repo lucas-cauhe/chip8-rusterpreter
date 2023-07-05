@@ -3,7 +3,8 @@ use tui::{
     backend::CrosstermBackend,
     Terminal, widgets::{Paragraph, List, Block, Borders, BorderType, ListItem}, style::{Color, Style, Modifier}, text::{Spans, Span}
 };
-use std::{io::{self, Stdout}, sync::{Mutex, Arc}};
+use std::{io::{self, Stdout}, sync::{/* Mutex,  */Arc}};
+use parking_lot::Mutex;
 
 use crate::components::{
     registers::RegistersComponent, 
@@ -46,7 +47,7 @@ impl Display {
         }
     }
     pub fn render_display(&mut self, mut current_line: usize) {
-        let mut term_lck = self.term.lock().unwrap();
+        let mut term_lck = self.term.lock();
         term_lck.draw(|rect| {
             
             let size = rect.size();
@@ -90,10 +91,10 @@ impl Display {
             rect.render_widget(self.command.style.widget(), dist.command);
             rect.render_widget(arrow_list, dist.arrows);
             if let Some(timer) = self.sound_timer.as_ref() {
-                rect.render_widget(timer.style.lock().unwrap().widget(), dist.sound_timer);
+                rect.render_widget(timer.style.lock().widget(), dist.sound_timer);
             }
             if let Some(timer) = self.delay_timer.as_ref() {
-                rect.render_widget(timer.style.lock().unwrap().widget(), dist.delay_timer);
+                rect.render_widget(timer.style.lock().widget(), dist.delay_timer);
             }
         }).unwrap();
     }

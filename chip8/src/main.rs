@@ -5,6 +5,7 @@ mod config;
 extern crate sdl2;
 extern crate rand;
 
+use ::chip8::config::Args;
 use config::parse_display;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -12,13 +13,13 @@ use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 
 use crate::chip8::{Chip8, ProgramType};
-use std::env;
+use clap::Parser;
 
 
 
 fn main() -> Result<(), String> {
     let mut chip = Chip8::new();
-    let file: Vec<String> = env::args().collect();
+    let file = Args::parse().file;
     let sdl2_context = sdl2::init()?;
     let video_subsystem = sdl2_context.video()?;
     let display_config = parse_display();
@@ -39,7 +40,7 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     
 
-    chip.load_program(ProgramType::Main(file[1].as_str()), None, None).expect("Error loading program: ");
+    chip.load_program(ProgramType::Main(file.as_str()), None, None).expect("Error loading program: ");
     loop {
         if let Err(eop) = chip.execute_cycle() {
             println!("Program terminated with status: {:?}", eop);

@@ -1,9 +1,10 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
+//use std::sync::Mutex;
+use parking_lot::{Mutex, Condvar};
 use std::fs;
-use std::sync::{mpsc::Sender, Condvar};
+use std::sync::{mpsc::Sender/* , Condvar */};
 use std::thread;
 use std::thread::JoinHandle;
 
@@ -314,7 +315,7 @@ impl Chip8 {
                 unsafe {
                     GRAPH = self.preprocess_all_labels(temp.clone());
                     let mut pre_cv = HashMap::new();
-                    for key in GRAPH.lock().unwrap().keys() {
+                    for key in GRAPH.lock().keys() {
                         pre_cv.insert(key.clone(), Condvar::new());
                     }
                     cv = Some(Arc::new(pre_cv));
@@ -344,7 +345,7 @@ impl Chip8 {
             for (line_no, line) in code.lines().enumerate() {
                 // check labels
                 // if a label is being defined, update the graph with its value
-                let mut graph_lck = graph_clone.lock().unwrap();
+                let mut graph_lck = graph_clone.lock();
                 let mut parsed_line: String = line.clone().to_string();
                 if let Some(column) = parsed_line.find(':') {
                     let label_name: String = parsed_line.drain(..column).collect();
@@ -358,7 +359,10 @@ impl Chip8 {
                         // wait if the dependency is not resolved
                         if graph_lck[item].is_none() {
                             // wait
-                            graph_lck = cv[item].wait_while(graph_lck, |g: &mut HashMap<String, Option<u16>>| g[item].is_none()).unwrap();
+                            while graph_lck[item].is_none() {
+                                cv[item].wait(&mut graph_lck);
+                            }
+                            //graph_lck = //, |g: &mut HashMap<String, Option<u16>>| g[item].is_none()).unwrap();
                         }
                         parsed_line = parsed_line.replace(item, &graph_lck[item].unwrap().to_string());
                     }
@@ -371,7 +375,7 @@ impl Chip8 {
                 inst_buff.push(((0xFF00 & parsed_inst) >> 8) as u8); // big-endian
                 inst_buff.push((0x00FF & parsed_inst) as u8);
             }
-            let mut mem_lck = mem_clone.lock().unwrap();
+            let mut mem_lck = mem_clone.lock();
             for (i, inst) in inst_buff.into_iter().enumerate() {
                 //self.memory[(load_addr as usize)+i] = inst;
                 mem_lck[(load_addr as usize)+i] = inst;
@@ -384,7 +388,7 @@ impl Chip8 {
                 h.join().unwrap();
             }
             handle.join().unwrap();
-            self.memory = unsafe {MEMORY.lock().unwrap().clone()};
+            self.memory = unsafe {MEMORY.lock().clone()};
         } else {
             t_pool.unwrap().push(handle);
         }
@@ -393,7 +397,7 @@ impl Chip8 {
 
     fn preprocess_all_labels(&self, mut text: String) -> Lazy<Arc<Mutex<HashMap<String, Option<u16>>>>> {
         let graph: Lazy<Arc<Mutex<HashMap<String, Option<u16>>>>>  = Lazy::new(| | Arc::new(Mutex::new(HashMap::new())));
-        let mut graph_lck = graph.lock().unwrap();
+        let mut graph_lck = graph.lock();
         // while there are label definitions
         while let Some(at) = text.find(":") {
             // find label definition
@@ -470,7 +474,7 @@ impl Chip8 {
                     },
                     _ => Err(format!("Specified routine purpose is incorrect: {:?}", portioned_directive[1]))
                 }
-            },
+            }
             _ => Err(format!("Specified directived is not found: {:?}", portioned_directive[0]))
         }
     }
@@ -680,7 +684,7 @@ impl Chip8 {
 
         let delay_t_called = match self.delay_timer.take() {
             Some((timer, ch)) => {
-                let t_left = timer.lock().unwrap();
+                let t_left = timer.lock();
                 if t_left.timer == 0 {
                     // dispatch setter subroutine
                     if let Err(cause) = self.call_subroutine(t_left.rti){
@@ -699,7 +703,7 @@ impl Chip8 {
         match self.sound_timer.take() {
             // the sound timer is set and delay timer hasn't called its subroutine
             Some((timer, ch)) => {
-                let t_left = timer.lock().unwrap();
+                let t_left = timer.lock();
                 if t_left.timer == 0  && !delay_t_called {
                     // dispatch setter subroutine
                     if let Err(cause) = self.call_subroutine(t_left.rti){
@@ -758,9 +762,9 @@ mod tests {
             let test_chip = Chip8::new();
             let test_string = String::from("main: LD ST, 1\n LD V1, V2\n hello: LD V3, V4\nhola: JMP 1234");
             let graph = test_chip.preprocess_all_labels(test_string);
-            assert!(graph.lock().unwrap().keys().collect::<Vec<&String>>().contains(&&"hola".to_string()));
-            assert!(graph.lock().unwrap().keys().collect::<Vec<&String>>().contains(&&"main".to_string()));
-            assert!(graph.lock().unwrap().keys().collect::<Vec<&String>>().contains(&&"hello".to_string()));
+            assert!(graph.lock().keys().collect::<Vec<&String>>().contains(&&"hola".to_string()));
+            assert!(graph.lock().keys().collect::<Vec<&String>>().contains(&&"main".to_string()));
+            assert!(graph.lock().keys().collect::<Vec<&String>>().contains(&&"hello".to_string()));
         }
 
         #[test]
@@ -1000,7 +1004,7 @@ mod tests {
             chip.execute_cycle().unwrap();
 
             let d_t = chip.delay_timer.as_ref().unwrap();
-            let d_tlck = d_t.0.lock().unwrap();
+            let d_tlck = d_t.0.lock();
             assert_eq!(2, d_tlck.timer);
             assert_eq!(2, Arc::strong_count(&d_t.0));
             drop(d_tlck);

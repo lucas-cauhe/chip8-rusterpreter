@@ -1,4 +1,4 @@
-use std::{sync::{mpsc::{Receiver, self}, Arc, Mutex}, thread, rc::Rc};
+use std::{sync::mpsc::{Receiver, self}, thread};
 
 use tui::{
     layout::{Alignment}, 

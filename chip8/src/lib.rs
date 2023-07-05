@@ -4,8 +4,7 @@ pub mod timers;
 pub mod chip8;
 pub mod config;
 
-use serde::{Serialize, Deserialize};
-use chip8::{Chip8, ChipConfig};
+use chip8::{Chip8};
 
 #[test]
 fn create_chip() {

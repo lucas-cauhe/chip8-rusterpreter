@@ -1,4 +1,5 @@
-use std::{thread, sync::{Arc, Mutex, mpsc::{Sender, self}}, time::Duration, borrow::BorrowMut};
+use std::{thread, sync::{Arc, /* Mutex, */ mpsc::{Sender, self}}, time::Duration};
+use parking_lot::Mutex;
 
 use chip8::timers::Signals;
 use tui::{
@@ -93,16 +94,15 @@ fn launch_timer_thread(thread_timer: Arc<Mutex<u32>>, arc_st: Arc<Mutex<TextArea
                 },
                 _ => { }
             }
-            let mut t_lck = thread_timer.lock().unwrap();
+            let mut t_lck = thread_timer.lock();
             *t_lck -= 1;
             if *t_lck <= 0 {
                 break;
             }
             drop(t_lck);
             let mut lck = arc_st.lock();
-            let st_lck = lck.as_deref_mut().unwrap();
-            st_lck.delete_line_by_head(); 
-            st_lck.insert_str(thread_timer.lock().unwrap().to_string());
+            lck.delete_line_by_head(); 
+            lck.insert_str(thread_timer.lock().to_string());
             drop(lck);
             thread::sleep(Duration::new(1, 0));
         }

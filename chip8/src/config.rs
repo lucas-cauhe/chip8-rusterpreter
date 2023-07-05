@@ -3,6 +3,7 @@ use serde::{Serialize, Deserialize};
 use std::fs;
 use serde_yaml;
 use super::chip8::ChipConfig;
+use clap::Parser;
 
 // chip constants
 
@@ -50,21 +51,20 @@ pub enum ConfigParserEnum {
     }
 }
 
-fn find_config_file() -> Option<String> {
-    let mut file = None;
-    let args = std::env::args().collect::<Vec<String>>();
-    for (arg_no, arg) in args.iter().enumerate() {
-        if arg == "--config" {
-            file = Some(args[arg_no+1].clone());
-        }
-    }
-    file 
+#[derive(Parser, Debug)]
+#[command(author)]
+pub struct Args {  
+
+    pub file: String,
+
+    #[arg(long, short)]
+    config: Option<String>
 }
 
 pub fn parse_chip() -> ChipConfig {
 
     let mut chip_conf: Option<ConfigParserEnum> = None;
-    if let Some(file) = find_config_file() {  
+    if let Some(file) = Args::parse().config {  
         let file = fs::read_to_string(file).unwrap();
         let deserialized_chip_config: Vec<ConfigParserEnum> = serde_yaml::from_str(&file).unwrap();
         if deserialized_chip_config.len() > 0 {

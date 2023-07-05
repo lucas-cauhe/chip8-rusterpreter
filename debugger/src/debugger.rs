@@ -151,7 +151,11 @@ impl Debugger {
         );
 
         match self.display.sound_timer.take() {
-            Some(timer) if *timer.time_left.lock().unwrap() != 0_u32 => self.display.sound_timer = Some(timer),
+            Some(timer) if *timer.time_left.lock() != 0_u32 => self.display.sound_timer = Some(timer),
+            _ => { }
+        }
+        match self.display.delay_timer.take() {
+            Some(timer) if *timer.time_left.lock() != 0_u32 => self.display.delay_timer = Some(timer),
             _ => { }
         }
         self.display.render_display(self.current_line as usize);
